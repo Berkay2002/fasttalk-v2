@@ -1,0 +1,10 @@
+[package]
+name = "fasttalk-audio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "=0.17.3"
+ringbuf = "0.5.1"
+serde = { version = "1", features = ["derive"] }
+sonora = "0.2.0"

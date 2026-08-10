@@ -1,0 +1,414 @@
+mod processing;
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
+use processing::{
+    ASR_FRAME_SAMPLES, AecProcessor, DEVICE_FRAME_SAMPLES, DEVICE_SAMPLE_RATE, SpeechDetector,
+};
+use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use ringbuf::{HeapCons, HeapProd, HeapRb};
+use serde::Serialize;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+const RING_CAPACITY_SAMPLES: usize = DEVICE_SAMPLE_RATE as usize * 2;
+const ASR_RING_CAPACITY_SAMPLES: usize = 16_000 * 2;
+
+#[derive(Clone, Copy, Debug)]
+pub struct AudioConfig {
+    pub aec_stream_delay_ms: i32,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            aec_stream_delay_ms: 40,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioStatus {
+    pub active: bool,
+    pub input_device: String,
+    pub output_device: String,
+    pub sample_rate_hz: u32,
+    pub speech_active: bool,
+    pub dropped_capture_samples: u64,
+    pub dropped_playback_samples: u64,
+    pub dropped_asr_samples: u64,
+    pub last_cancel_to_callback_ms: Option<f64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum AudioError {
+    Device(String),
+    Stream(String),
+    Processing(String),
+    QueueFull { accepted: usize, requested: usize },
+}
+
+impl std::fmt::Display for AudioError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Device(message) | Self::Stream(message) | Self::Processing(message) => {
+                formatter.write_str(message)
+            }
+            Self::QueueFull {
+                accepted,
+                requested,
+            } => write!(
+                formatter,
+                "playback queue accepted {accepted} of {requested} samples"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AudioError {}
+
+struct SharedState {
+    running: AtomicBool,
+    speech_active: AtomicBool,
+    cancel_epoch: AtomicU64,
+    cancel_requested_micros: AtomicU64,
+    cancel_latency_micros: AtomicU64,
+    dropped_capture: AtomicU64,
+    dropped_playback: AtomicU64,
+    dropped_asr: AtomicU64,
+    last_error: Mutex<Option<String>>,
+    clock_origin: Instant,
+}
+
+impl SharedState {
+    fn new() -> Self {
+        Self {
+            running: AtomicBool::new(true),
+            speech_active: AtomicBool::new(false),
+            cancel_epoch: AtomicU64::new(0),
+            cancel_requested_micros: AtomicU64::new(0),
+            cancel_latency_micros: AtomicU64::new(0),
+            dropped_capture: AtomicU64::new(0),
+            dropped_playback: AtomicU64::new(0),
+            dropped_asr: AtomicU64::new(0),
+            last_error: Mutex::new(None),
+            clock_origin: Instant::now(),
+        }
+    }
+
+    fn elapsed_micros(&self) -> u64 {
+        self.clock_origin
+            .elapsed()
+            .as_micros()
+            .min(u64::MAX as u128) as u64
+    }
+
+    fn record_error(&self, error: impl Into<String>) {
+        if let Ok(mut last_error) = self.last_error.lock() {
+            *last_error = Some(error.into());
+        }
+    }
+}
+
+pub struct AudioEngine {
+    input_stream: Option<Stream>,
+    output_stream: Option<Stream>,
+    processor_thread: Option<JoinHandle<()>>,
+    playback_producer: HeapProd<f32>,
+    asr_consumer: HeapCons<f32>,
+    shared: Arc<SharedState>,
+    input_device: String,
+    output_device: String,
+}
+
+impl AudioEngine {
+    pub fn start(config: AudioConfig) -> Result<Self, AudioError> {
+        let host = cpal::default_host();
+        let input_device = host
+            .default_input_device()
+            .ok_or_else(|| AudioError::Device("no default input device available".to_owned()))?;
+        let output_device = host
+            .default_output_device()
+            .ok_or_else(|| AudioError::Device("no default output device available".to_owned()))?;
+        let input_name = input_device
+            .description()
+            .map_err(|error| AudioError::Device(error.to_string()))?
+            .name()
+            .to_owned();
+        let output_name = output_device
+            .description()
+            .map_err(|error| AudioError::Device(error.to_string()))?
+            .name()
+            .to_owned();
+        let input_config = select_f32_48khz_input(&input_device)?;
+        let output_config = select_f32_48khz_output(&output_device)?;
+
+        let (mut capture_producer, capture_consumer) =
+            HeapRb::<f32>::new(RING_CAPACITY_SAMPLES).split();
+        let (playback_producer, mut playback_consumer) =
+            HeapRb::<f32>::new(RING_CAPACITY_SAMPLES).split();
+        let (mut reference_producer, reference_consumer) =
+            HeapRb::<f32>::new(RING_CAPACITY_SAMPLES).split();
+        let (asr_producer, asr_consumer) = HeapRb::<f32>::new(ASR_RING_CAPACITY_SAMPLES).split();
+        let shared = Arc::new(SharedState::new());
+
+        let input_channels = input_config.channels() as usize;
+        let input_shared = shared.clone();
+        let input_stream_config: StreamConfig = input_config.config();
+        let input_stream = input_device
+            .build_input_stream(
+                &input_stream_config,
+                move |data: &[f32], _| {
+                    for frame in data.chunks_exact(input_channels) {
+                        let mono = frame.iter().sum::<f32>() / input_channels as f32;
+                        if reference_safe_push(&mut capture_producer, mono).is_err() {
+                            input_shared.dropped_capture.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                },
+                {
+                    let shared = shared.clone();
+                    move |error| shared.record_error(format!("input stream: {error}"))
+                },
+                None,
+            )
+            .map_err(|error| AudioError::Stream(format!("build input stream: {error}")))?;
+
+        let output_channels = output_config.channels() as usize;
+        let output_shared = shared.clone();
+        let output_stream_config: StreamConfig = output_config.config();
+        let mut observed_cancel_epoch = 0;
+        let output_stream = output_device
+            .build_output_stream(
+                &output_stream_config,
+                move |data: &mut [f32], _| {
+                    let cancel_epoch = output_shared.cancel_epoch.load(Ordering::Acquire);
+                    if cancel_epoch != observed_cancel_epoch {
+                        observed_cancel_epoch = cancel_epoch;
+                        playback_consumer.clear();
+                        let requested = output_shared
+                            .cancel_requested_micros
+                            .load(Ordering::Acquire);
+                        let latency = output_shared.elapsed_micros().saturating_sub(requested);
+                        output_shared
+                            .cancel_latency_micros
+                            .store(latency.max(1), Ordering::Release);
+                    }
+                    for frame in data.chunks_exact_mut(output_channels) {
+                        let sample = playback_consumer.try_pop().unwrap_or(0.0);
+                        for channel in frame {
+                            *channel = sample;
+                        }
+                        if reference_producer.try_push(sample).is_err() {
+                            output_shared
+                                .dropped_playback
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                },
+                {
+                    let shared = shared.clone();
+                    move |error| shared.record_error(format!("output stream: {error}"))
+                },
+                None,
+            )
+            .map_err(|error| AudioError::Stream(format!("build output stream: {error}")))?;
+
+        let processor_shared = shared.clone();
+        let processor_thread = std::thread::Builder::new()
+            .name("fasttalk-audio-processing".to_owned())
+            .spawn(move || {
+                run_processor(
+                    capture_consumer,
+                    reference_consumer,
+                    asr_producer,
+                    processor_shared,
+                    config.aec_stream_delay_ms,
+                );
+            })
+            .map_err(|error| AudioError::Stream(format!("start audio processor: {error}")))?;
+
+        input_stream
+            .play()
+            .map_err(|error| AudioError::Stream(format!("start input stream: {error}")))?;
+        output_stream
+            .play()
+            .map_err(|error| AudioError::Stream(format!("start output stream: {error}")))?;
+
+        Ok(Self {
+            input_stream: Some(input_stream),
+            output_stream: Some(output_stream),
+            processor_thread: Some(processor_thread),
+            playback_producer,
+            asr_consumer,
+            shared,
+            input_device: input_name,
+            output_device: output_name,
+        })
+    }
+
+    pub fn queue_playback(&mut self, samples_48khz_mono: &[f32]) -> Result<(), AudioError> {
+        let accepted = self.playback_producer.push_slice(samples_48khz_mono);
+        if accepted == samples_48khz_mono.len() {
+            Ok(())
+        } else {
+            self.shared.dropped_playback.fetch_add(
+                (samples_48khz_mono.len() - accepted) as u64,
+                Ordering::Relaxed,
+            );
+            Err(AudioError::QueueFull {
+                accepted,
+                requested: samples_48khz_mono.len(),
+            })
+        }
+    }
+
+    pub fn cancel_playback(&self) {
+        self.shared
+            .cancel_requested_micros
+            .store(self.shared.elapsed_micros(), Ordering::Release);
+        self.shared.cancel_epoch.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub fn read_asr_samples(&mut self, output: &mut [f32]) -> usize {
+        self.asr_consumer.pop_slice(output)
+    }
+
+    #[must_use]
+    pub fn status(&self) -> AudioStatus {
+        let cancellation = self.shared.cancel_latency_micros.load(Ordering::Acquire);
+        AudioStatus {
+            active: self.shared.running.load(Ordering::Acquire),
+            input_device: self.input_device.clone(),
+            output_device: self.output_device.clone(),
+            sample_rate_hz: DEVICE_SAMPLE_RATE,
+            speech_active: self.shared.speech_active.load(Ordering::Acquire),
+            dropped_capture_samples: self.shared.dropped_capture.load(Ordering::Relaxed),
+            dropped_playback_samples: self.shared.dropped_playback.load(Ordering::Relaxed),
+            dropped_asr_samples: self.shared.dropped_asr.load(Ordering::Relaxed),
+            last_cancel_to_callback_ms: (cancellation != 0)
+                .then_some(cancellation as f64 / 1_000.0),
+            last_error: self
+                .shared
+                .last_error
+                .lock()
+                .ok()
+                .and_then(|error| error.clone()),
+        }
+    }
+
+    pub fn stop(&mut self) {
+        if !self.shared.running.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        self.input_stream.take();
+        self.output_stream.take();
+        if let Some(thread) = self.processor_thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for AudioEngine {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn run_processor(
+    mut capture_consumer: HeapCons<f32>,
+    mut reference_consumer: HeapCons<f32>,
+    mut asr_producer: HeapProd<f32>,
+    shared: Arc<SharedState>,
+    stream_delay_ms: i32,
+) {
+    let mut processor = match AecProcessor::new(stream_delay_ms) {
+        Ok(processor) => processor,
+        Err(error) => {
+            shared.record_error(error);
+            shared.running.store(false, Ordering::Release);
+            return;
+        }
+    };
+    let mut detector = SpeechDetector::default();
+    let mut capture = [0.0; DEVICE_FRAME_SAMPLES];
+    let mut reference = [0.0; DEVICE_FRAME_SAMPLES];
+    let mut output = [0.0; ASR_FRAME_SAMPLES];
+
+    while shared.running.load(Ordering::Acquire) {
+        if capture_consumer.occupied_len() < DEVICE_FRAME_SAMPLES {
+            std::thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        capture_consumer.pop_slice(&mut capture);
+        reference.fill(0.0);
+        let maximum_reference_backlog = DEVICE_FRAME_SAMPLES * 10;
+        let reference_backlog = reference_consumer.occupied_len();
+        if reference_backlog > maximum_reference_backlog {
+            reference_consumer.skip(reference_backlog - maximum_reference_backlog);
+        }
+        reference_consumer.pop_slice(&mut reference);
+        if let Err(error) = processor.process(&capture, &reference, &mut output) {
+            shared.record_error(error);
+            shared.running.store(false, Ordering::Release);
+            break;
+        }
+        shared
+            .speech_active
+            .store(detector.update(&output), Ordering::Release);
+        let accepted = asr_producer.push_slice(&output);
+        shared
+            .dropped_asr
+            .fetch_add((output.len() - accepted) as u64, Ordering::Relaxed);
+    }
+}
+
+fn reference_safe_push(producer: &mut HeapProd<f32>, sample: f32) -> Result<(), f32> {
+    producer.try_push(sample)
+}
+
+fn select_f32_48khz_input(device: &cpal::Device) -> Result<SupportedStreamConfig, AudioError> {
+    let configs = device
+        .supported_input_configs()
+        .map_err(|error| AudioError::Device(format!("enumerate input formats: {error}")))?;
+    select_f32_48khz(configs).ok_or_else(|| {
+        AudioError::Device("default input device has no 48 kHz f32 format".to_owned())
+    })
+}
+
+fn select_f32_48khz_output(device: &cpal::Device) -> Result<SupportedStreamConfig, AudioError> {
+    let configs = device
+        .supported_output_configs()
+        .map_err(|error| AudioError::Device(format!("enumerate output formats: {error}")))?;
+    select_f32_48khz(configs).ok_or_else(|| {
+        AudioError::Device("default output device has no 48 kHz f32 format".to_owned())
+    })
+}
+
+fn select_f32_48khz(
+    configs: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+) -> Option<SupportedStreamConfig> {
+    configs
+        .filter(|config| {
+            config.sample_format() == SampleFormat::F32
+                && config.min_sample_rate() <= DEVICE_SAMPLE_RATE
+                && config.max_sample_rate() >= DEVICE_SAMPLE_RATE
+        })
+        .min_by_key(cpal::SupportedStreamConfigRange::channels)
+        .map(|config| config.with_sample_rate(DEVICE_SAMPLE_RATE))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_clock_reports_elapsed_time() {
+        let shared = SharedState::new();
+        assert!(shared.elapsed_micros() < 1_000_000);
+    }
+}
