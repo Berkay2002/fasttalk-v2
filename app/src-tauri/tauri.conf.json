@@ -25,13 +25,28 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "resources": {
+      "../../runtime/": "runtime",
+      "windows/redist/vc_redist.x64.exe": "prerequisites/vc_redist.x64.exe"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "compression": "lzma",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
   }
 }

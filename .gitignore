@@ -3,3 +3,5 @@
 /runtime/
 /artifacts/feasibility/*
 !/artifacts/feasibility/.gitkeep
+/artifacts/release/
+/app/src-tauri/windows/redist/vc_redist.x64.exe

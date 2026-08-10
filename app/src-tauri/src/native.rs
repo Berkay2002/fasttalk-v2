@@ -61,8 +61,13 @@ pub struct NativeModelPaths {
 }
 
 impl NativeRuntime {
+    #[cfg(test)]
     pub fn for_development_checkout() -> Self {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        Self::for_root(root)
+    }
+
+    pub fn for_root(root: PathBuf) -> Self {
         let models = NativeModelPaths {
             qwen: root.join(".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf"),
             asr: root.join(".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),

@@ -14,3 +14,22 @@ npm run tauri dev
 
 The project currently uses loopback ports 18080 for llama.cpp and 18081 for
 NeMo-Speech.cpp. The CSP allows only those native worker endpoints.
+
+## Windows release
+
+From the repository root, build the signed current-user NSIS installer with:
+
+```powershell
+$env:FASTTALK_SIGNING_THUMBPRINT = "<certificate thumbprint>"
+$env:FASTTALK_TIMESTAMP_URL = "<RFC 3161 timestamp URL>"
+.\scripts\Build-Release.ps1
+```
+
+The release build rebuilds the pinned native workers, downloads and verifies the
+current Microsoft Visual C++ x64 runtime, signs the native payload, runs the Rust
+tests, and signs the application and installer. For a local packaging check only,
+use `-Unsigned -SkipNativeBuild`. Validate the resulting installer with
+`.\scripts\Test-Installer.ps1`.
+
+Models are downloaded after installation or imported from a verified offline
+pack. They are not embedded in the installer.

@@ -23,19 +23,22 @@ struct AppState {
 }
 
 impl AppState {
-    fn new(model_store: std::path::PathBuf) -> Result<Self, fasttalk_model_manager::ManifestError> {
+    fn new(
+        legacy_model_root: std::path::PathBuf,
+        model_store: std::path::PathBuf,
+        runtime_root: std::path::PathBuf,
+    ) -> Result<Self, fasttalk_model_manager::ManifestError> {
         let manifest = SignedManifest::verify(
             include_bytes!("../../../config/models.manifest.json").to_vec(),
             include_str!("../../../config/models.manifest.sig"),
             include_str!("../../../config/models.manifest.pub"),
         )?;
-        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let models = ModelManager::new(workspace, model_store, manifest)
+        let models = ModelManager::new(legacy_model_root, model_store, manifest)
             .expect("the embedded model-manager HTTP configuration is valid");
         Ok(Self {
             engine: Arc::new(Mutex::new(ConversationEngine::default())),
             audio: Arc::new(Mutex::new(None)),
-            runtime: Mutex::new(NativeRuntime::for_development_checkout()),
+            runtime: Mutex::new(NativeRuntime::for_root(runtime_root)),
             conversation: Mutex::new(None),
             models: Arc::new(models),
         })
@@ -398,8 +401,15 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let model_store = app.path().app_local_data_dir()?.join("models");
-            app.manage(AppState::new(model_store)?);
+            let app_data = app.path().app_local_data_dir()?;
+            let model_store = app_data.join("models");
+            let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            let (legacy_model_root, runtime_root) = if cfg!(debug_assertions) {
+                (workspace.clone(), workspace)
+            } else {
+                (app_data, app.path().resource_dir()?)
+            };
+            app.manage(AppState::new(legacy_model_root, model_store, runtime_root)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
