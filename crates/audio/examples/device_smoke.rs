@@ -2,7 +2,29 @@ use fasttalk_audio::{AudioConfig, AudioEngine};
 use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut audio = AudioEngine::start(AudioConfig::default())?;
+    let devices = AudioEngine::enumerate_devices()?;
+    let input = devices
+        .inputs
+        .iter()
+        .find(|device| device.is_default && device.is_compatible)
+        .or_else(|| devices.inputs.iter().find(|device| device.is_compatible))
+        .ok_or("no compatible input device")?;
+    let output = devices
+        .outputs
+        .iter()
+        .find(|device| device.is_default && device.is_compatible)
+        .or_else(|| devices.outputs.iter().find(|device| device.is_compatible))
+        .ok_or("no compatible output device")?;
+    let mut audio = AudioEngine::start(AudioConfig {
+        input_device_id: Some(input.id.clone()),
+        output_device_id: Some(output.id.clone()),
+        ..AudioConfig::default()
+    })?;
+    audio.set_muted(true);
+    if !audio.status().muted {
+        return Err("audio mute did not take effect".into());
+    }
+    audio.set_muted(false);
     audio.queue_playback(&vec![0.0; 48_000])?;
 
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -16,7 +38,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     audio.cancel_playback();
     std::thread::sleep(Duration::from_millis(200));
     let status = audio.status();
+    println!("input_devices={}", devices.inputs.len());
+    println!("output_devices={}", devices.outputs.len());
+    println!("input_device_id={}", status.input_device_id);
     println!("input_device={}", status.input_device);
+    println!("output_device_id={}", status.output_device_id);
     println!("output_device={}", status.output_device);
     println!("processed_asr_samples={processed_samples}");
     println!(

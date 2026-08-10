@@ -1,14 +1,14 @@
 mod native;
 mod orchestrator;
 
-use fasttalk_audio::{AudioConfig, AudioEngine, AudioStatus};
+use fasttalk_audio::{AudioConfig, AudioDevices, AudioEngine, AudioStatus};
 use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, EngineSnapshot,
 };
 use fasttalk_runtime::WorkerState;
 use native::{NativeRuntime, NativeRuntimeStatus};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, State};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
@@ -36,6 +36,13 @@ impl Default for AppState {
 struct CommandError {
     code: &'static str,
     message: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioStartRequest {
+    input_device_id: Option<String>,
+    output_device_id: Option<String>,
 }
 
 fn lock_engine<'a>(
@@ -74,19 +81,46 @@ fn engine_dispatch(
 }
 
 #[tauri::command]
-fn audio_start(state: State<'_, AppState>) -> Result<AudioStatus, CommandError> {
+fn audio_devices() -> Result<AudioDevices, CommandError> {
+    AudioEngine::enumerate_devices().map_err(|error| CommandError {
+        code: "audioDevicesFailed",
+        message: error.to_string(),
+    })
+}
+
+#[tauri::command]
+fn audio_start(
+    request: Option<AudioStartRequest>,
+    state: State<'_, AppState>,
+) -> Result<AudioStatus, CommandError> {
     let mut audio = lock(&state.audio, "audioUnavailable")?;
     if audio.is_none() {
-        *audio =
-            Some(
-                AudioEngine::start(AudioConfig::default()).map_err(|error| CommandError {
-                    code: "audioStartFailed",
-                    message: error.to_string(),
-                })?,
-            );
+        let request = request.unwrap_or_default();
+        *audio = Some(
+            AudioEngine::start(AudioConfig {
+                input_device_id: request.input_device_id,
+                output_device_id: request.output_device_id,
+                ..AudioConfig::default()
+            })
+            .map_err(|error| CommandError {
+                code: "audioStartFailed",
+                message: error.to_string(),
+            })?,
+        );
         log::info!("native audio started");
     }
     Ok(audio.as_ref().expect("audio initialized above").status())
+}
+
+#[tauri::command]
+fn audio_set_muted(muted: bool, state: State<'_, AppState>) -> Result<AudioStatus, CommandError> {
+    let audio = lock(&state.audio, "audioUnavailable")?;
+    let audio = audio.as_ref().ok_or_else(|| CommandError {
+        code: "audioNotReady",
+        message: "native audio is not running".to_owned(),
+    })?;
+    audio.set_muted(muted);
+    Ok(audio.status())
 }
 
 #[tauri::command]
@@ -267,8 +301,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             engine_snapshot,
             engine_dispatch,
+            audio_devices,
             audio_start,
             audio_status,
+            audio_set_muted,
             audio_cancel,
             audio_stop,
             conversation_start,

@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
+const MAX_TRANSCRIPT_MESSAGES: usize = 24;
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ConversationState {
@@ -13,6 +15,20 @@ pub enum ConversationState {
     Speaking,
     Interrupted,
     Faulted,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TranscriptRole {
+    User,
+    Assistant,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptMessage {
+    pub role: TranscriptRole,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -38,6 +54,8 @@ pub struct EngineSnapshot {
     pub cancellation_epoch: u64,
     pub partial_transcript: String,
     pub committed_transcript: String,
+    pub assistant_transcript: String,
+    pub transcript: Vec<TranscriptMessage>,
     pub pending_clause: Option<String>,
     pub last_error: Option<String>,
 }
@@ -74,6 +92,8 @@ impl Default for EngineSnapshot {
             cancellation_epoch: 0,
             partial_transcript: String::new(),
             committed_transcript: String::new(),
+            assistant_transcript: String::new(),
+            transcript: Vec::new(),
             pending_clause: None,
             last_error: None,
         }
@@ -109,6 +129,7 @@ impl ConversationEngine {
                 self.snapshot.state = State::Listening;
                 self.snapshot.partial_transcript.clear();
                 self.snapshot.committed_transcript.clear();
+                self.snapshot.assistant_transcript.clear();
                 self.snapshot.pending_clause = None;
                 self.snapshot.last_error = None;
             }
@@ -124,14 +145,19 @@ impl ConversationEngine {
             (State::Thinking | State::Speaking, Event::ClauseReady { text }) => {
                 self.snapshot.state = State::Speaking;
                 self.snapshot.pending_clause = Some(text.clone());
+                if !self.snapshot.assistant_transcript.is_empty() {
+                    self.snapshot.assistant_transcript.push(' ');
+                }
+                self.snapshot.assistant_transcript.push_str(text);
             }
             (State::Speaking, Event::PlaybackDrained) => {
+                commit_transcript_turn(&mut self.snapshot);
                 self.snapshot.turn_id += 1;
                 self.snapshot.state = State::Listening;
                 self.snapshot.pending_clause = None;
-                self.snapshot.committed_transcript.clear();
             }
             (State::Listening | State::Thinking | State::Speaking, Event::Interrupt) => {
+                commit_transcript_turn(&mut self.snapshot);
                 self.snapshot.state = State::Interrupted;
                 self.snapshot.cancellation_epoch += 1;
                 self.snapshot.pending_clause = None;
@@ -158,6 +184,26 @@ impl ConversationEngine {
 
         self.snapshot.revision += 1;
         Ok(self.snapshot())
+    }
+}
+
+fn commit_transcript_turn(snapshot: &mut EngineSnapshot) {
+    if !snapshot.committed_transcript.trim().is_empty() {
+        snapshot.transcript.push(TranscriptMessage {
+            role: TranscriptRole::User,
+            text: std::mem::take(&mut snapshot.committed_transcript),
+        });
+    }
+    if !snapshot.assistant_transcript.trim().is_empty() {
+        snapshot.transcript.push(TranscriptMessage {
+            role: TranscriptRole::Assistant,
+            text: std::mem::take(&mut snapshot.assistant_transcript),
+        });
+    }
+    if snapshot.transcript.len() > MAX_TRANSCRIPT_MESSAGES {
+        snapshot
+            .transcript
+            .drain(..snapshot.transcript.len() - MAX_TRANSCRIPT_MESSAGES);
     }
 }
 
@@ -349,6 +395,21 @@ mod tests {
         let snapshot = engine.apply(ConversationEvent::PlaybackDrained).unwrap();
         assert_eq!(snapshot.state, ConversationState::Listening);
         assert_eq!(snapshot.turn_id, 2);
+        assert_eq!(
+            snapshot.transcript,
+            [
+                TranscriptMessage {
+                    role: TranscriptRole::User,
+                    text: "Hello".to_owned(),
+                },
+                TranscriptMessage {
+                    role: TranscriptRole::Assistant,
+                    text: "Hi there.".to_owned(),
+                },
+            ]
+        );
+        assert!(snapshot.committed_transcript.is_empty());
+        assert!(snapshot.assistant_transcript.is_empty());
     }
 
     #[test]
@@ -409,5 +470,28 @@ mod tests {
             .map(|message| message.text.as_str())
             .collect::<Vec<_>>();
         assert_eq!(messages, ["two", "three"]);
+    }
+
+    #[test]
+    fn visible_transcript_is_bounded_to_twelve_turns() {
+        let mut engine = ConversationEngine::default();
+        engine.apply(ConversationEvent::StartListening).unwrap();
+        for turn in 0..13 {
+            engine
+                .apply(ConversationEvent::EndOfSpeech {
+                    transcript: format!("user {turn}"),
+                })
+                .unwrap();
+            engine
+                .apply(ConversationEvent::ClauseReady {
+                    text: format!("assistant {turn}"),
+                })
+                .unwrap();
+            engine.apply(ConversationEvent::PlaybackDrained).unwrap();
+        }
+        let transcript = engine.snapshot().transcript;
+        assert_eq!(transcript.len(), MAX_TRANSCRIPT_MESSAGES);
+        assert_eq!(transcript[0].text, "user 1");
+        assert_eq!(transcript[23].text, "assistant 12");
     }
 }

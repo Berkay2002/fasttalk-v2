@@ -16,24 +16,47 @@ use std::time::{Duration, Instant};
 const RING_CAPACITY_SAMPLES: usize = DEVICE_SAMPLE_RATE as usize * 2;
 const ASR_RING_CAPACITY_SAMPLES: usize = 16_000 * 2;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AudioConfig {
     pub aec_stream_delay_ms: i32,
+    pub input_device_id: Option<String>,
+    pub output_device_id: Option<String>,
 }
 
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
             aec_stream_delay_ms: 40,
+            input_device_id: None,
+            output_device_id: None,
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub is_compatible: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDevices {
+    pub inputs: Vec<AudioDeviceInfo>,
+    pub outputs: Vec<AudioDeviceInfo>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AudioStatus {
     pub active: bool,
+    pub muted: bool,
+    pub input_device_id: String,
     pub input_device: String,
+    pub output_device_id: String,
     pub output_device: String,
     pub sample_rate_hz: u32,
     pub speech_active: bool,
@@ -74,6 +97,7 @@ impl std::error::Error for AudioError {}
 
 struct SharedState {
     running: AtomicBool,
+    muted: AtomicBool,
     speech_active: AtomicBool,
     cancel_epoch: AtomicU64,
     cancel_requested_micros: AtomicU64,
@@ -89,6 +113,7 @@ impl SharedState {
     fn new() -> Self {
         Self {
             running: AtomicBool::new(true),
+            muted: AtomicBool::new(false),
             speech_active: AtomicBool::new(false),
             cancel_epoch: AtomicU64::new(0),
             cancel_requested_micros: AtomicU64::new(0),
@@ -123,18 +148,50 @@ pub struct AudioEngine {
     asr_consumer: HeapCons<f32>,
     shared: Arc<SharedState>,
     input_device: String,
+    input_device_id: String,
     output_device: String,
+    output_device_id: String,
 }
 
 impl AudioEngine {
+    pub fn enumerate_devices() -> Result<AudioDevices, AudioError> {
+        let host = cpal::default_host();
+        let default_input = host
+            .default_input_device()
+            .and_then(|device| device.id().ok())
+            .map(|id| id.to_string());
+        let default_output = host
+            .default_output_device()
+            .and_then(|device| device.id().ok())
+            .map(|id| id.to_string());
+        let inputs = host
+            .input_devices()
+            .map_err(|error| AudioError::Device(format!("enumerate input devices: {error}")))?
+            .filter_map(|device| device_info(device, default_input.as_deref(), true))
+            .collect::<Vec<_>>();
+        let outputs = host
+            .output_devices()
+            .map_err(|error| AudioError::Device(format!("enumerate output devices: {error}")))?
+            .filter_map(|device| device_info(device, default_output.as_deref(), false))
+            .collect::<Vec<_>>();
+        Ok(AudioDevices {
+            inputs: sorted_devices(inputs),
+            outputs: sorted_devices(outputs),
+        })
+    }
+
     pub fn start(config: AudioConfig) -> Result<Self, AudioError> {
         let host = cpal::default_host();
-        let input_device = host
-            .default_input_device()
-            .ok_or_else(|| AudioError::Device("no default input device available".to_owned()))?;
-        let output_device = host
-            .default_output_device()
-            .ok_or_else(|| AudioError::Device("no default output device available".to_owned()))?;
+        let input_device = resolve_device(&host, config.input_device_id.as_deref(), true)?;
+        let output_device = resolve_device(&host, config.output_device_id.as_deref(), false)?;
+        let input_device_id = input_device
+            .id()
+            .map_err(|error| AudioError::Device(format!("read input device id: {error}")))?
+            .to_string();
+        let output_device_id = output_device
+            .id()
+            .map_err(|error| AudioError::Device(format!("read output device id: {error}")))?
+            .to_string();
         let input_name = input_device
             .description()
             .map_err(|error| AudioError::Device(error.to_string()))?
@@ -165,7 +222,11 @@ impl AudioEngine {
                 &input_stream_config,
                 move |data: &[f32], _| {
                     for frame in data.chunks_exact(input_channels) {
-                        let mono = frame.iter().sum::<f32>() / input_channels as f32;
+                        let mono = if input_shared.muted.load(Ordering::Acquire) {
+                            0.0
+                        } else {
+                            frame.iter().sum::<f32>() / input_channels as f32
+                        };
                         if reference_safe_push(&mut capture_producer, mono).is_err() {
                             input_shared.dropped_capture.fetch_add(1, Ordering::Relaxed);
                         }
@@ -248,7 +309,9 @@ impl AudioEngine {
             asr_consumer,
             shared,
             input_device: input_name,
+            input_device_id,
             output_device: output_name,
+            output_device_id,
         })
     }
 
@@ -283,12 +346,19 @@ impl AudioEngine {
         self.asr_consumer.pop_slice(output)
     }
 
+    pub fn set_muted(&self, muted: bool) {
+        self.shared.muted.store(muted, Ordering::Release);
+    }
+
     #[must_use]
     pub fn status(&self) -> AudioStatus {
         let cancellation = self.shared.cancel_latency_micros.load(Ordering::Acquire);
         AudioStatus {
             active: self.shared.running.load(Ordering::Acquire),
+            muted: self.shared.muted.load(Ordering::Acquire),
+            input_device_id: self.input_device_id.clone(),
             input_device: self.input_device.clone(),
+            output_device_id: self.output_device_id.clone(),
             output_device: self.output_device.clone(),
             sample_rate_hz: DEVICE_SAMPLE_RATE,
             speech_active: self.shared.speech_active.load(Ordering::Acquire),
@@ -317,6 +387,65 @@ impl AudioEngine {
             let _ = thread.join();
         }
     }
+}
+
+fn resolve_device(
+    host: &cpal::Host,
+    requested_id: Option<&str>,
+    input: bool,
+) -> Result<cpal::Device, AudioError> {
+    if let Some(requested_id) = requested_id {
+        let id = requested_id
+            .parse::<cpal::DeviceId>()
+            .map_err(|error| AudioError::Device(format!("invalid audio device id: {error}")))?;
+        return host.device_by_id(&id).ok_or_else(|| {
+            AudioError::Device(format!(
+                "selected {} device is no longer available: {requested_id}",
+                if input { "input" } else { "output" }
+            ))
+        });
+    }
+    if input {
+        host.default_input_device()
+            .ok_or_else(|| AudioError::Device("no default input device available".to_owned()))
+    } else {
+        host.default_output_device()
+            .ok_or_else(|| AudioError::Device("no default output device available".to_owned()))
+    }
+}
+
+fn device_info(
+    device: cpal::Device,
+    default_id: Option<&str>,
+    input: bool,
+) -> Option<AudioDeviceInfo> {
+    let id = device.id().ok()?.to_string();
+    let name = device
+        .description()
+        .map(|description| description.name().to_owned())
+        .unwrap_or_else(|_| id.clone());
+    let is_compatible = if input {
+        select_f32_48khz_input(&device).is_ok()
+    } else {
+        select_f32_48khz_output(&device).is_ok()
+    };
+    Some(AudioDeviceInfo {
+        is_default: default_id == Some(id.as_str()),
+        id,
+        name,
+        is_compatible,
+    })
+}
+
+fn sorted_devices(mut devices: Vec<AudioDeviceInfo>) -> Vec<AudioDeviceInfo> {
+    devices.sort_by(|left, right| {
+        right
+            .is_default
+            .cmp(&left.is_default)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    devices
 }
 
 impl Drop for AudioEngine {
