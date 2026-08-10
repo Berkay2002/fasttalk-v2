@@ -36,13 +36,17 @@
       "id": "nemo-speech",
       "environmentVariable": "FASTTALK_NEMO_SPEECH_EXE",
       "defaultPath": "runtime/asr/nemo-speech.exe",
-      "fileName": "nemo-speech.exe"
+      "fileName": "nemo-speech.exe",
+      "smokeArguments": ["--help"],
+      "dependencyPaths": ["runtime/cuda-13.3"]
     },
     {
       "id": "llama-server",
       "environmentVariable": "FASTTALK_LLAMA_SERVER_EXE",
       "defaultPath": "runtime/llm/llama-server.exe",
-      "fileName": "llama-server.exe"
+      "fileName": "llama-server.exe",
+      "smokeArguments": ["--version"],
+      "dependencyPaths": ["runtime/cuda-13.3"]
     }
   ],
   "models": [
@@ -51,28 +55,62 @@
       "repository": "unsloth/Qwen3.6-27B-GGUF",
       "revision": "82d411acf4a06cfb8d9b073a5211bf410bfc29bf",
       "environmentVariable": "FASTTALK_QWEN_MODEL",
-      "fileName": "Qwen3.6-27B-Q4_K_M.gguf"
+      "defaultPath": ".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf",
+      "fileName": "Qwen3.6-27B-Q4_K_M.gguf",
+      "sizeBytes": 16817244384,
+      "sha256": "5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0"
     },
     {
       "id": "nemotron-3.5-asr-streaming-0.6b-q8",
       "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
       "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
       "environmentVariable": "FASTTALK_ASR_MODEL",
-      "fileName": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+      "defaultPath": ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "fileName": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "sizeBytes": 741548352,
+      "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae"
     },
     {
       "id": "magpie-tts-v2602-f16",
       "repository": "nvidia/magpie_tts_multilingual_357m",
       "revision": "452ef560f972c38d5fc16476259aac9456453547",
       "environmentVariable": "FASTTALK_MAGPIE_MODEL",
-      "fileName": "magpie_tts_multilingual_357m.v2602.f16.gguf"
+      "defaultPath": ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
+      "fileName": "magpie_tts_multilingual_357m.v2602.f16.gguf",
+      "sizeBytes": 448604832,
+      "sha256": "901d299a8b1df016cf81cae0089a7a7c15627b9633d033357e15a47d9a219a75"
+    },
+    {
+      "id": "magpie-tts-tokenizer",
+      "repository": "nvidia/magpie_tts_multilingual_357m",
+      "revision": "452ef560f972c38d5fc16476259aac9456453547",
+      "environmentVariable": "FASTTALK_MAGPIE_TOKENIZER_ARCHIVE",
+      "defaultPath": ".cache/models/magpie-tts/magpie_tts_multilingual_357m.nemo",
+      "fileName": "magpie_tts_multilingual_357m.nemo",
+      "sizeBytes": 1470208000,
+      "sha256": "ec675fa8c02b9c1d5382c5c2b5a6acec6492c1e8344866c07cf3892185d18953",
+      "extractTo": ".cache/models/magpie-tts/extracted"
+    },
+    {
+      "id": "nanocodec-22khz-f16",
+      "repository": "nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps",
+      "revision": "fc00890b604aa2de298d2641ffc6c5f6caf8c4d7",
+      "environmentVariable": "FASTTALK_NANOCODEC_MODEL",
+      "defaultPath": ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+      "fileName": "nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+      "sizeBytes": 78823104,
+      "sha256": "cc86d36d821a27cdc1d4ef600a3e2b0dabe76e88fcc2a8652d9543134c07ef2d"
     },
     {
       "id": "kokoro-82m",
-      "repository": "hexgrad/Kokoro-82M",
-      "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+      "repository": "onnx-community/Kokoro-82M-v1.0-ONNX",
+      "revision": "1939ad2a8e416c0acfeecc08a694d14ef25f2231",
       "environmentVariable": "FASTTALK_KOKORO_MODEL",
-      "fileName": null
+      "defaultPath": ".cache/models/kokoro-82m/model_q8f16.onnx",
+      "remoteFile": "onnx/model_q8f16.onnx",
+      "fileName": "model_q8f16.onnx",
+      "sizeBytes": 86033585,
+      "sha256": "04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0"
     }
   ],
   "evidence": {

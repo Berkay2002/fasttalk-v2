@@ -54,6 +54,8 @@ pub struct Runtime {
     pub environment_variable: String,
     pub default_path: PathBuf,
     pub file_name: String,
+    pub smoke_arguments: Vec<String>,
+    pub dependency_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,7 +65,10 @@ pub struct Model {
     pub repository: String,
     pub revision: String,
     pub environment_variable: String,
+    pub default_path: Option<PathBuf>,
     pub file_name: Option<String>,
+    pub size_bytes: Option<u64>,
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -238,7 +243,7 @@ pub fn run_preflight(config: &Config, root: &Path) -> PreflightReport {
         checks.push(check_runtime(runtime, root));
     }
     for model in &config.models {
-        checks.push(check_model(model));
+        checks.push(check_model(model, root));
     }
 
     PreflightReport {
@@ -436,15 +441,45 @@ fn check_runtime(runtime: &Runtime, root: &Path) -> Check {
     let value = env::var_os(&runtime.environment_variable)
         .map(PathBuf::from)
         .or_else(|| Some(root.join(&runtime.default_path)));
-    let pass = value.as_ref().is_some_and(|path| {
+    let file_is_valid = value.as_ref().is_some_and(|path| {
         path.is_file()
             && path
                 .file_name()
                 .is_some_and(|name| name.eq_ignore_ascii_case(&runtime.file_name))
     });
-    let actual = value
+    let smoke = value.as_ref().filter(|_| file_is_valid).map(|path| {
+        let mut command = Command::new(path);
+        command.args(&runtime.smoke_arguments);
+
+        if let Some(current_path) = env::var_os("PATH") {
+            let dependency_paths = runtime
+                .dependency_paths
+                .iter()
+                .map(|dependency| root.join(dependency));
+            let paths = dependency_paths.chain(env::split_paths(&current_path));
+            if let Ok(joined) = env::join_paths(paths) {
+                command.env("PATH", joined);
+            }
+        }
+
+        command.output()
+    });
+    let pass = smoke
         .as_ref()
-        .map_or_else(|| "not set".to_owned(), |path| path.display().to_string());
+        .is_some_and(|result| result.as_ref().is_ok_and(Output::status_success));
+    let actual = match (value.as_ref(), smoke) {
+        (None, _) => "not set".to_owned(),
+        (Some(path), Some(Ok(output))) if output.status.success() => {
+            format!("{} (smoke test passed)", path.display())
+        }
+        (Some(path), Some(Ok(output))) => {
+            format!("{} (smoke test exited {})", path.display(), output.status)
+        }
+        (Some(path), Some(Err(error))) => {
+            format!("{} (smoke test failed: {error})", path.display())
+        }
+        (Some(path), None) => format!("{} (invalid executable path)", path.display()),
+    };
     Check::new(
         format!("runtime.{}", runtime.id),
         "runtime",
@@ -458,13 +493,18 @@ fn check_runtime(runtime: &Runtime, root: &Path) -> Check {
     )
 }
 
-fn check_model(model: &Model) -> Check {
-    let value = env::var_os(&model.environment_variable).map(PathBuf::from);
+fn check_model(model: &Model, root: &Path) -> Check {
+    let value = env::var_os(&model.environment_variable)
+        .map(PathBuf::from)
+        .or_else(|| model.default_path.as_ref().map(|path| root.join(path)));
     let pass = value.as_ref().is_some_and(|path| {
         path.is_file()
             && model.file_name.as_ref().is_none_or(|file_name| {
                 path.file_name()
                     .is_some_and(|name| name.eq_ignore_ascii_case(file_name))
+            })
+            && model.size_bytes.is_none_or(|expected| {
+                fs::metadata(path).is_ok_and(|metadata| metadata.len() == expected)
             })
     });
     let actual = value

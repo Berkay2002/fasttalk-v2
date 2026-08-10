@@ -1,5 +1,5 @@
 /target/
 /.cache/
 /runtime/
-/artifacts/feasibility/*.json
+/artifacts/feasibility/*
 !/artifacts/feasibility/.gitkeep

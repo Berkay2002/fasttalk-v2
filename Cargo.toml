@@ -1,4 +1,3 @@
 [workspace]
-members = ["crates/feasibility"]
+members = ["app/src-tauri", "crates/conversation", "crates/feasibility"]
 resolver = "2"
-

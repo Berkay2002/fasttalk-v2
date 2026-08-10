@@ -45,7 +45,9 @@ if ($nvccVersion -notmatch "release $([regex]::Escape($settings.target.cudaToolk
 }
 $env:CUDA_PATH = $cudaPath
 $env:CUDACXX = $nvcc
-$env:Path = "$(Join-Path $cudaPath 'bin');$env:Path"
+$cudaBin = Join-Path $cudaPath "bin"
+$cudaRuntimeBin = Join-Path $cudaBin "x64"
+$env:Path = "$cudaRuntimeBin;$cudaBin;$env:Path"
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -64,6 +66,7 @@ if (-not (Test-Path -LiteralPath $vcpkgExe)) {
 }
 $env:VCPKG_DISABLE_METRICS = "1"
 $env:VCPKG_MAX_CONCURRENCY = $Jobs
+$env:VCPKG_ROOT = $vcpkgSource
 & $vcpkgExe install sentencepiece:x64-windows --clean-after-build
 if ($LASTEXITCODE -ne 0) { throw "vcpkg SentencePiece install failed ($LASTEXITCODE)" }
 
@@ -112,9 +115,26 @@ $llamaBin = Join-Path $llamaBuild "bin"
 $nemoBin = Join-Path $nemoBuild "bin"
 $llamaRuntime = Join-Path $runtime "llm"
 $nemoRuntime = Join-Path $runtime "asr"
-New-Item -ItemType Directory -Force -Path $llamaRuntime, $nemoRuntime | Out-Null
+$cudaRuntime = Join-Path $runtime "cuda-$($settings.target.cudaToolkitVersion)"
+New-Item -ItemType Directory -Force -Path $llamaRuntime, $nemoRuntime, $cudaRuntime | Out-Null
 Copy-Item -Path (Join-Path $llamaBin "*") -Destination $llamaRuntime -Recurse -Force
 Copy-Item -Path (Join-Path $nemoBin "*") -Destination $nemoRuntime -Recurse -Force
+
+$cudaRedistributables = @(
+    "cublas64_13.dll",
+    "cublasLt64_13.dll",
+    "cudart64_13.dll",
+    "nvJitLink_130_0.dll",
+    "nvrtc64_130_0.dll",
+    "nvrtc-builtins64_133.dll"
+)
+foreach ($fileName in $cudaRedistributables) {
+    $source = Join-Path $cudaRuntimeBin $fileName
+    if (-not (Test-Path -LiteralPath $source)) {
+        throw "Required CUDA redistributable missing: $source"
+    }
+    Copy-Item -LiteralPath $source -Destination $cudaRuntime -Force
+}
 
 $llamaExe = Join-Path $llamaRuntime "llama-server.exe"
 $nemoExe = Join-Path $nemoRuntime "nemo-speech.exe"
@@ -124,3 +144,4 @@ foreach ($executable in $llamaExe, $nemoExe) {
 
 Write-Host "llama-server: $llamaExe"
 Write-Host "nemo-speech: $nemoExe"
+Write-Host "CUDA runtime: $cudaRuntime"

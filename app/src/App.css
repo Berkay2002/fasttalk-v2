@@ -1,0 +1,167 @@
+:root {
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  color: #e9ece8;
+  background: #111512;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 80% -10%, rgba(116, 151, 125, 0.18), transparent 36rem),
+    #111512;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.78rem 1.15rem;
+  color: #0d140f;
+  background: #b9d5c0;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+button.secondary {
+  color: #dce5de;
+  background: #283029;
+}
+
+.shell {
+  width: min(860px, calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 5.5rem 0 3rem;
+}
+
+.eyebrow,
+.section-label,
+.state-label {
+  margin: 0;
+  color: #9cb2a1;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 650px;
+  margin: 0.5rem 0 0;
+  font-size: clamp(2.6rem, 7vw, 5.3rem);
+  font-weight: 560;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.summary {
+  max-width: 600px;
+  margin: 1.5rem 0 3.25rem;
+  color: #9ca59e;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.status-card,
+.transcript-card {
+  border: 1px solid #2c342e;
+  border-radius: 1.15rem;
+  background: rgba(25, 30, 26, 0.82);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.14);
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.3rem 1.4rem;
+}
+
+.state-dot {
+  display: inline-block;
+  width: 0.62rem;
+  height: 0.62rem;
+  margin-right: 0.55rem;
+  border-radius: 50%;
+  background: #6c766e;
+}
+
+.state-label {
+  display: inline-block;
+  color: #dfe8e1;
+}
+
+.state-listening,
+.state-speaking {
+  background: #7fd49a;
+  box-shadow: 0 0 0 0.3rem rgba(127, 212, 154, 0.12);
+}
+
+.state-thinking {
+  background: #d7bd72;
+}
+
+.state-interrupted,
+.state-faulted {
+  background: #df8177;
+}
+
+.state-detail {
+  margin: 0.35rem 0 0 1.25rem;
+  color: #7e8a81;
+  font-size: 0.85rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.transcript-card {
+  min-height: 12rem;
+  margin-top: 1rem;
+  padding: 1.5rem;
+  color: #c8d0ca;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.transcript-card blockquote {
+  margin: 1.5rem 0 0;
+  padding-left: 1rem;
+  border-left: 2px solid #76917d;
+  color: #edf3ee;
+}
+
+.error {
+  color: #f09b91;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 2rem, 860px);
+    padding-top: 3rem;
+  }
+
+  .status-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actions button {
+    flex: 1;
+  }
+}
