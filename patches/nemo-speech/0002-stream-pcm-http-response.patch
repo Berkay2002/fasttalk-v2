@@ -1,0 +1,51 @@
+diff --git a/server/http/http_server.cpp b/server/http/http_server.cpp
+--- a/server/http/http_server.cpp
++++ b/server/http/http_server.cpp
+@@ -627,17 +627,38 @@ struct Server::Impl {
+                 const std::string format = body.string_or("response_format", "wav");
+                 if (format != "wav" && format != "pcm")
+                     throw std::invalid_argument("response_format must be wav or pcm");
+-                std::string pcm;
+-                const auto result =
+-                    synthesizer->synthesize(synthesis, [&](const auto&, const std::string& chunk) {
+-                        pcm += chunk;
+-                        return true;
+-                    });
+-                if (format == "pcm")
+-                    response.set_content(std::move(pcm), "audio/pcm");
+-                else
++                if (format == "pcm") {
++                    auto prepared = synthesizer->prepare(synthesis);
++                    response.set_chunked_content_provider(
++                        "audio/pcm",
++                        [synthesizer, prepared = std::move(prepared), started = false](
++                            size_t, httplib::DataSink& sink) mutable {
++                            if (started) {
++                                sink.done();
++                                return true;
++                            }
++                            started = true;
++                            const auto result = synthesizer->synthesize(
++                                prepared, [&](const auto&, const std::string& chunk) {
++                                    if (sink.is_writable && !sink.is_writable())
++                                        return false;
++                                    return sink.write(chunk.data(), chunk.size());
++                                });
++                            if (result.cancelled)
++                                return false;
++                            sink.done();
++                            return true;
++                        });
++                } else {
++                    std::string pcm;
++                    const auto result = synthesizer->synthesize(
++                        synthesis, [&](const auto&, const std::string& chunk) {
++                            pcm += chunk;
++                            return true;
++                        });
+                     response.set_content(
+                         audio::pcm16_wav(pcm, result.metadata.sample_rate), "audio/wav");
++                }
+ #else
+                 (void)request;
+                 fail(response, 501, "this build does not include TTS");

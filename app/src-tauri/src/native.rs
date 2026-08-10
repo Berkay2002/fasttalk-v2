@@ -201,8 +201,13 @@ fn worker_environment(root: &Path) -> Vec<(OsString, OsString)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fasttalk_pipeline::{
+        AsrEvent, CancellationToken, ChatMessage, LlmClient, LlmEvent, MagpieClient,
+        RealtimeAsrClient, TtsEvent,
+    };
     use fasttalk_runtime::WorkerState;
     use std::time::Instant;
+    use tokio::sync::mpsc;
 
     #[test]
     #[ignore = "loads the pinned GPU models and requires the FastTalk hardware profile"]
@@ -229,5 +234,139 @@ mod tests {
             status = runtime.poll().unwrap();
         }
         panic!("native workers did not become ready before the 240 second deadline: {status:?}");
+    }
+
+    #[tokio::test]
+    #[ignore = "loads pinned GPU models and exercises live loopback inference"]
+    async fn live_pipeline_clients_stream_pinned_models() {
+        let mut runtime = NativeRuntime::for_development_checkout();
+        wait_until_ready(&mut runtime).await;
+
+        let asr_started = Instant::now();
+        let transcript = exercise_asr().await;
+        let asr_ms = asr_started.elapsed().as_secs_f64() * 1_000.0;
+        assert!(transcript.to_ascii_lowercase().contains("country"));
+
+        let (_, _, llm_cold_first_delta_ms) =
+            exercise_llm("Reply with one short sentence confirming that the model is ready.").await;
+        let (answer, clauses, llm_warm_first_delta_ms) =
+            exercise_llm("Reply with one short sentence about local speech software.").await;
+        assert!(!answer.trim().is_empty());
+        assert!(!clauses.is_empty());
+        assert!(llm_warm_first_delta_ms <= 900.0);
+
+        let tts = MagpieClient::new("http://127.0.0.1:18081").unwrap();
+        let (tts_tx, mut tts_rx) = mpsc::channel(64);
+        let tts_started = Instant::now();
+        let tts_task = tokio::spawn(async move {
+            tts.synthesize(
+                "FastTalk streams this sentence while it is synthesized.",
+                CancellationToken::new(),
+                tts_tx,
+            )
+            .await
+        });
+        let mut first_pcm_ms = None;
+        let mut pcm_samples = 0;
+        while let Some(event) = tts_rx.recv().await {
+            match event {
+                TtsEvent::Pcm48KhzMono(samples) => {
+                    first_pcm_ms
+                        .get_or_insert_with(|| tts_started.elapsed().as_secs_f64() * 1_000.0);
+                    pcm_samples += samples.len();
+                }
+                TtsEvent::Completed => break,
+            }
+        }
+        tts_task.await.unwrap().unwrap();
+        assert!(pcm_samples > 24_000);
+
+        println!("asr_final_ms={asr_ms:.3}");
+        println!("llm_cold_first_delta_ms={llm_cold_first_delta_ms:.3}");
+        println!("llm_warm_first_delta_ms={llm_warm_first_delta_ms:.3}");
+        println!("tts_first_pcm_ms={:.3}", first_pcm_ms.unwrap());
+        println!("tts_pcm_48khz_samples={pcm_samples}");
+        runtime.stop().unwrap();
+    }
+
+    async fn wait_until_ready(runtime: &mut NativeRuntime) {
+        let mut status = runtime.start().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(240);
+        while Instant::now() < deadline {
+            if status.llm.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+                && status.speech.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            status = runtime.poll().unwrap();
+        }
+        panic!("native workers did not become ready: {status:?}");
+    }
+
+    async fn exercise_asr() -> String {
+        let wav = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav");
+        let mut reader = hound::WavReader::open(wav).unwrap();
+        assert_eq!(reader.spec().sample_rate, 16_000);
+        assert_eq!(reader.spec().channels, 1);
+        let samples = reader
+            .samples::<i16>()
+            .map(|sample| sample.unwrap() as f32 / 32768.0)
+            .collect::<Vec<_>>();
+        let client = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime").unwrap();
+        let (mut sender, mut receiver) = client.connect().await.unwrap();
+        let receive_task = tokio::spawn(async move {
+            let mut final_transcript = None;
+            while let Some(event) = receiver.next_event().await {
+                match event.unwrap() {
+                    AsrEvent::Final(transcript) => final_transcript = Some(transcript),
+                    AsrEvent::Committed => return final_transcript.unwrap_or_default(),
+                    _ => {}
+                }
+            }
+            final_transcript.unwrap_or_default()
+        });
+        for chunk in samples.chunks(1_600) {
+            sender.send_f32(chunk).await.unwrap();
+        }
+        sender.commit().await.unwrap();
+        let transcript = tokio::time::timeout(Duration::from_secs(30), receive_task)
+            .await
+            .unwrap()
+            .unwrap();
+        sender.close().await.unwrap();
+        transcript
+    }
+
+    async fn exercise_llm(prompt: &str) -> (String, Vec<String>, f64) {
+        let llm = LlmClient::new("http://127.0.0.1:18080").unwrap();
+        let (events, mut receiver) = mpsc::channel(64);
+        let started = Instant::now();
+        let prompt = prompt.to_owned();
+        let task = tokio::spawn(async move {
+            llm.stream_reply(
+                vec![ChatMessage {
+                    role: "user".to_owned(),
+                    content: prompt,
+                }],
+                CancellationToken::new(),
+                events,
+            )
+            .await
+        });
+        let mut first_delta_ms = None;
+        let mut clauses = Vec::new();
+        while let Some(event) = receiver.recv().await {
+            match event {
+                LlmEvent::Delta(_) => {
+                    first_delta_ms.get_or_insert_with(|| started.elapsed().as_secs_f64() * 1_000.0);
+                }
+                LlmEvent::Clause(clause) => clauses.push(clause),
+                LlmEvent::Completed(_) => break,
+            }
+        }
+        let answer = task.await.unwrap().unwrap();
+        (answer, clauses, first_delta_ms.unwrap())
     }
 }
