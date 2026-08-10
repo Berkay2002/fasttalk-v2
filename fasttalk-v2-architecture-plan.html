@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastTalk v2 — Architecture and Implementation Plan</title>
+  <style>
+    :root {
+      --ink: #17211d;
+      --muted: #5f6d66;
+      --paper: #f4f1e9;
+      --card: #fffdf7;
+      --line: #d9d4c8;
+      --green: #174d3b;
+      --green-soft: #dce9e1;
+      --amber: #9b5b17;
+      --amber-soft: #f4e6cf;
+      --red: #8a3d32;
+      --red-soft: #f0ded8;
+      --blue: #345d7e;
+      --shadow: 0 12px 32px rgba(37, 45, 40, 0.08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.58 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    .page { width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 88px; }
+    header {
+      position: relative;
+      overflow: hidden;
+      padding: 54px;
+      color: #f8f6ef;
+      background: var(--green);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      width: 360px;
+      height: 360px;
+      right: -120px;
+      top: -180px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 50%;
+      box-shadow: 0 0 0 52px rgba(255,255,255,.035), 0 0 0 104px rgba(255,255,255,.025);
+    }
+    .eyebrow { margin: 0 0 12px; color: #c9ded3; letter-spacing: .15em; text-transform: uppercase; font-size: 12px; font-weight: 750; }
+    h1 { max-width: 760px; margin: 0; font: 700 clamp(38px, 6vw, 70px)/.98 Georgia, "Times New Roman", serif; letter-spacing: -.035em; }
+    .lede { max-width: 760px; margin: 24px 0 0; color: #dbe7e1; font-size: 19px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+    .pill { padding: 7px 12px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; color: #eef5f1; background: rgba(255,255,255,.07); font-size: 13px; }
+    nav { display: flex; gap: 10px; overflow-x: auto; padding: 20px 4px 6px; scrollbar-width: thin; }
+    nav a { flex: 0 0 auto; padding: 8px 12px; color: var(--green); background: var(--card); border: 1px solid var(--line); border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 650; }
+    section { margin-top: 54px; }
+    h2 { margin: 0 0 20px; font: 700 34px/1.08 Georgia, "Times New Roman", serif; letter-spacing: -.02em; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    p { margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 18px; }
+    .card { grid-column: span 4; padding: 24px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 5px 18px rgba(30,40,35,.04); }
+    .card.wide { grid-column: span 6; }
+    .card.full { grid-column: 1 / -1; }
+    .decision { border-top: 5px solid var(--green); }
+    .tag { display: inline-block; margin-bottom: 14px; padding: 4px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
+    .tag.amber { background: var(--amber-soft); color: var(--amber); }
+    .tag.red { background: var(--red-soft); color: var(--red); }
+    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: center; padding: 24px; background: #132b23; border-radius: 20px; color: #edf5f1; }
+    .node { min-height: 92px; display: grid; place-items: center; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,.17); border-radius: 14px; background: rgba(255,255,255,.06); font-weight: 700; }
+    .arrow { text-align: center; color: #91bca8; font-size: 24px; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 16px; font-size: 14px; }
+    th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { background: #ece8de; color: #344139; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 700; }
+    .good { color: var(--green); font-weight: 750; }
+    .maybe { color: var(--amber); font-weight: 750; }
+    .reject { color: var(--red); font-weight: 750; }
+    .budget { display: grid; grid-template-columns: 2fr 1fr; gap: 8px 18px; align-items: center; }
+    .bar { height: 14px; overflow: hidden; border-radius: 999px; background: #e7e2d7; }
+    .fill { height: 100%; border-radius: inherit; background: var(--green); }
+    .fill.asr { background: #4c7a65; }
+    .fill.tts { background: #a86e2f; }
+    .fill.reserve { background: #89938e; }
+    .budget-row { display: contents; }
+    .budget-label { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+    .callout { padding: 20px 22px; border-left: 5px solid var(--amber); border-radius: 10px; background: var(--amber-soft); }
+    ul, ol { margin: 10px 0 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code { padding: .12em .36em; border-radius: 5px; background: #e8e4da; color: #26332c; font: .92em ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow-x: auto; margin: 14px 0 0; padding: 18px; color: #eaf1ed; background: #14251f; border-radius: 14px; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .phase { position: relative; padding-left: 52px; }
+    .phase::before { content: attr(data-step); position: absolute; left: 0; top: -2px; width: 34px; height: 34px; display: grid; place-items: center; color: white; background: var(--green); border-radius: 50%; font-weight: 800; }
+    .metric { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .metric:last-child { border-bottom: 0; }
+    .metric strong { color: var(--green); font-size: 18px; }
+    footer { margin-top: 64px; padding-top: 22px; color: var(--muted); border-top: 1px solid var(--line); font-size: 13px; }
+    @media (max-width: 860px) {
+      header { padding: 36px 28px; }
+      .card, .card.wide { grid-column: 1 / -1; }
+      .pipeline { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Architecture decision record · August 2026</p>
+      <h1>FastTalk v2</h1>
+      <p class="lede">A Windows-first, fully local voice conversation app built around low latency, natural turn-taking, and reliable interruption on an RTX 3090.</p>
+      <div class="meta">
+        <span class="pill">Windows 11</span>
+        <span class="pill">RTX 3090 · 24 GB</span>
+        <span class="pill">Tauri 2 + Rust</span>
+        <span class="pill">Offline after setup</span>
+        <span class="pill">Hands-free + barge-in</span>
+      </div>
+    </header>
+
+    <nav aria-label="Document sections">
+      <a href="#decision">Decision</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#research">Research</a>
+      <a href="#memory">VRAM</a>
+      <a href="#runtime">Runtime</a>
+      <a href="#implementation">Implementation</a>
+      <a href="#acceptance">Acceptance</a>
+      <a href="#sources">Sources</a>
+    </nav>
+
+    <section id="decision">
+      <h2>The decision</h2>
+      <div class="grid">
+        <article class="card decision">
+          <span class="tag">Desktop shell</span>
+          <h3>Tauri 2, not a browser-only app</h3>
+          <p class="muted">React renders the UI. Rust owns audio, state, resource admission, and native worker supervision. The WebView never becomes the inference runtime.</p>
+        </article>
+        <article class="card decision">
+          <span class="tag">Inference</span>
+          <h3>Native Windows CUDA sidecars</h3>
+          <p class="muted">NeMo-Speech.cpp serves streaming speech. llama.cpp serves Qwen. Native workers give direct CUDA access and normal Windows lifecycle control.</p>
+        </article>
+        <article class="card decision">
+          <span class="tag">Deployment</span>
+          <h3>No Docker at runtime</h3>
+          <p class="muted">Docker and WSL2 remain optional development tools. Users need a compatible NVIDIA driver, not Docker Desktop, CUDA Toolkit, Python, Node, or Rust.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <h2>Conversation pipeline</h2>
+      <div class="pipeline" role="img" aria-label="Microphone to VAD and turn detector to streaming ASR to local LLM to streaming TTS to speakers">
+        <div class="node">Microphone<br><small>WASAPI + AEC</small></div>
+        <div class="arrow">→</div>
+        <div class="node">VAD + turn<br><small>Silero + Smart Turn</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Streaming ASR<br><small>Nemotron 3.5</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Local LLM<br><small>Qwen3.6 27B</small></div>
+      </div>
+      <div class="pipeline" style="margin-top:8px; grid-template-columns: 1fr 48px 1fr 48px 1fr;">
+        <div class="node">Sentence / clause stream</div>
+        <div class="arrow">→</div>
+        <div class="node">Streaming TTS<br><small>Magpie or CPU Kokoro</small></div>
+        <div class="arrow">→</div>
+        <div class="node">Speakers<br><small>interruptible queue</small></div>
+      </div>
+      <p class="muted" style="margin-top:14px;">Capture stays active while the assistant speaks. Post-AEC user speech interrupts playback, cancels generation, clears queued audio, and resumes listening.</p>
+    </section>
+
+    <section id="research">
+      <h2>Model research</h2>
+      <h3>Speech recognition</h3>
+      <table>
+        <thead><tr><th>Candidate</th><th>Strength</th><th>Constraint</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr><td>Nemotron 3.5 ASR Streaming 0.6B</td><td>Native cache-aware streaming, punctuation, capitalization, multilingual, official Q8 GGUF</td><td>Very new native runtime requires an early packaging spike</td><td class="good">Default</td></tr>
+          <tr><td>Nemotron Speech Streaming EN 0.6B</td><td>Strong English streaming with configurable 80–1120 ms chunks</td><td>English only</td><td class="maybe">English benchmark</td></tr>
+          <tr><td>Whisper large-v3-turbo</td><td>Mature ecosystem, broad languages, timestamps</td><td>Windowed pseudo-streaming rather than a native streaming model</td><td class="maybe">Fallback reference</td></tr>
+          <tr><td>Parakeet TDT 0.6B v3</td><td>Excellent offline throughput and European-language coverage</td><td>NeMo-Speech.cpp rejects streaming requests for this checkpoint</td><td class="maybe">Offline benchmark</td></tr>
+          <tr><td>Cohere Transcribe 03-2026</td><td>Strong 2B offline transcription accuracy</td><td>No native streaming; official WebGPU demo records the complete clip first</td><td class="reject">Not v1</td></tr>
+          <tr><td>Canary 1B v2</td><td>ASR plus translation across European languages</td><td>Translation is out of scope and the Windows deployment path is weaker</td><td class="reject">Not v1</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:28px;">Language model</h3>
+      <table>
+        <thead><tr><th>Profile</th><th>Quant artifact</th><th>Use</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr><td>Qwen3.6-27B</td><td>Q4_K_M · 16.82 GB</td><td>Text-only, non-thinking, 16K context</td><td class="good">Preferred</td></tr>
+          <tr><td>Qwen3.6-27B</td><td>Q5_K_M · 19.51 GB</td><td>Higher precision but too little shared-GPU headroom</td><td class="reject">Reject</td></tr>
+          <tr><td>Qwen3.5-9B</td><td>Q5_K_M · 6.58 GB</td><td>Fallback when the 27B profile misses memory or latency gates</td><td class="maybe">Compatibility</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:28px;">Text to speech</h3>
+      <table>
+        <thead><tr><th>Candidate</th><th>Strength</th><th>Constraint</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr><td>Magpie v2602 + NanoCodec</td><td>True streamed codec output, fixed built-in voices, same native service as ASR</td><td>Consumes some shared VRAM; current C++ runtime supports v2602 rather than v2607</td><td class="good">Preferred</td></tr>
+          <tr><td>Kokoro-82M Q8</td><td>Small, Apache-2.0, many fixed voices, can run on CPU</td><td>Phrase-level output rather than genuine acoustic streaming</td><td class="maybe">Automatic fallback</td></tr>
+          <tr><td>Chatterbox Turbo</td><td>Natural voice, expressive tags, cloning</td><td>No proven official local streaming path; cloning is not required</td><td class="reject">Future benchmark</td></tr>
+          <tr><td>XTTS v2</td><td>Streaming and multilingual voice cloning</td><td>Noncommercial checkpoint license and older stack</td><td class="reject">Reject</td></tr>
+          <tr><td>Fish Audio S2-Pro</td><td>Expressive and multilingual</td><td>Officially expects at least 24 GB VRAM and Linux/WSL; consumes the whole GPU budget</td><td class="reject">Reject</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="memory">
+      <h2>24 GB VRAM policy</h2>
+      <div class="grid">
+        <article class="card wide">
+          <div class="budget">
+            <div class="budget-row"><div class="budget-label"><span>Qwen3.6 27B + KV/runtime</span><strong>≈18 GB</strong></div><div class="bar"><div class="fill" style="width:75%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Nemotron ASR</span><strong>≤2 GB</strong></div><div class="bar"><div class="fill asr" style="width:8.3%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Magpie TTS</span><strong>≤1.5 GB</strong></div><div class="bar"><div class="fill tts" style="width:6.25%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Required reserve</span><strong>≥1.5 GB</strong></div><div class="bar"><div class="fill reserve" style="width:6.25%"></div></div></div>
+          </div>
+        </article>
+        <article class="card wide">
+          <span class="tag amber">Admission order</span>
+          <ol>
+            <li>Load Qwen3.6-27B and Nemotron ASR.</li>
+            <li>Load Magpie only if warmed usage remains at or below 22.5 GB.</li>
+            <li>Otherwise retain Qwen3.6 and move TTS to CPU Kokoro.</li>
+            <li>Use Qwen3.5-9B only if Qwen3.6 still fails memory or latency.</li>
+          </ol>
+        </article>
+      </div>
+      <div class="callout" style="margin-top:18px;"><strong>Artifact size is not peak VRAM.</strong> The decision is made from a combined warmed benchmark while normal desktop applications are open. An empty-GPU benchmark is not representative of the product.</div>
+    </section>
+
+    <section id="runtime">
+      <h2>Native Windows runtime</h2>
+      <div class="grid">
+        <article class="card full">
+          <span class="tag">Pinned toolchain</span>
+          <p><strong>CUDA Toolkit 13.3 Update 1 · VS 2022 v143 · CMake 3.30.x · Ninja 1.13.x · Rust stable MSVC · x86_64-pc-windows-msvc · sm_86 SASS</strong></p>
+          <p class="muted">Compile with <code>CMAKE_CUDA_ARCHITECTURES=86-real</code>. This avoids PTX-only deployment, startup JIT, and accidental CI-machine tuning.</p>
+        </article>
+        <article class="card wide">
+          <h3>App boundary</h3>
+          <ul>
+            <li>WebView2: controls, transcript, settings, meters, progress.</li>
+            <li>Rust: WASAPI, AEC, ring buffers, state machine, worker health, model registry, VRAM admission.</li>
+            <li>NeMo-Speech.cpp: ASR and optional Magpie TTS.</li>
+            <li>llama.cpp: Qwen through an OpenAI-compatible streaming endpoint.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Process isolation</h3>
+          <pre>runtime/
+  asr/
+    nemo-speech.exe
+    patched-ggml DLLs
+  llm/
+    llama-server.exe
+    upstream-ggml DLLs
+  cuda-13.3/
+    required redistributable DLLs</pre>
+        </article>
+        <article class="card full">
+          <h3>Why Docker is not shipped</h3>
+          <p class="muted">Docker Desktop GPU support crosses Windows, WSL2, a Linux VM, container networking, and bind-mounted model files. It adds daemon startup and failure states while the microphone and speakers remain native Windows resources. Riva NIM additionally requires NVIDIA AI Enterprise. Native NeMo-Speech.cpp and llama.cpp avoid those constraints.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="implementation">
+      <h2>Implementation sequence</h2>
+      <div class="grid">
+        <article class="card wide phase" data-step="1">
+          <h3>Hardware feasibility spike</h3>
+          <p class="muted">Build pinned native runtimes, run Qwen3.6 + Nemotron + both TTS options, capture TTFT, throughput, first audio, RTF, VRAM, and cancellation. Apply the fixed gates before building the UI around assumptions.</p>
+        </article>
+        <article class="card wide phase" data-step="2">
+          <h3>Core conversation engine</h3>
+          <p class="muted">Implement the typed provider interfaces, explicit state machine, endpoint policy, prompt/session manager, clause chunker, interruption semantics, and deterministic cancellation.</p>
+        </article>
+        <article class="card wide phase" data-step="3">
+          <h3>Native audio and supervision</h3>
+          <p class="muted">Add WASAPI capture/playback, playback-reference AEC, resampling, binary audio transport, Windows Job Objects, health checks, crash recovery, and bounded diagnostics.</p>
+        </article>
+        <article class="card wide phase" data-step="4">
+          <h3>Polished desktop experience</h3>
+          <p class="muted">Build a restrained conversation UI with setup progress, device selection, live transcript, readiness, clear listening/thinking/speaking states, mute, stop, and manual interrupt.</p>
+        </article>
+        <article class="card wide phase" data-step="5">
+          <h3>Model manager and offline setup</h3>
+          <p class="muted">Use pinned Hugging Face revisions, signed manifests, resumable downloads, SHA-256 verification, atomic activation, license notices, and air-gapped model packs.</p>
+        </article>
+        <article class="card wide phase" data-step="6">
+          <h3>Installer and release gate</h3>
+          <p class="muted">Package a current-user NSIS installer, private CUDA runtime dependencies, VC++ prerequisite, signatures, clean-machine verification, offline tests, and uninstall coverage.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="acceptance">
+      <h2>Acceptance gates</h2>
+      <div class="grid">
+        <article class="card wide">
+          <div class="metric"><span>End of speech → first audio, p50</span><strong>≤ 1.2 s</strong></div>
+          <div class="metric"><span>End of speech → first audio, p95</span><strong>≤ 1.8 s</strong></div>
+          <div class="metric"><span>Warm LLM first token, p95</span><strong>≤ 900 ms</strong></div>
+          <div class="metric"><span>Qwen3.6 generation</span><strong>≥ 20 tok/s</strong></div>
+        </article>
+        <article class="card wide">
+          <div class="metric"><span>ASR partial update</span><strong>≤ 250 ms</strong></div>
+          <div class="metric"><span>Barge-in → silence</span><strong>≤ 150 ms</strong></div>
+          <div class="metric"><span>Combined warmed VRAM</span><strong>≤ 22.5 GB</strong></div>
+          <div class="metric"><span>Conversation soak</span><strong>30 min, no OOM</strong></div>
+        </article>
+        <article class="card full">
+          <h3>Release scenarios</h3>
+          <ul>
+            <li>Quiet speech, hesitation, short acknowledgements, long questions, background noise, and speaker playback.</li>
+            <li>Rapid interruption during LLM generation, TTS synthesis, and active playback.</li>
+            <li>Worker crash, corrupt model, partial download, port conflict, unavailable microphone, and insufficient free VRAM.</li>
+            <li>Clean Windows installation with an NVIDIA driver but no CUDA Toolkit, Docker, WSL, Python, Node, Rust, or Visual Studio.</li>
+            <li>Complete voice turn, restart recovery, and normal operation with networking disabled.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="sources">
+      <h2>Primary sources</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Models</h3>
+          <ul>
+            <li><a href="https://huggingface.co/Qwen/Qwen3.6-27B">Qwen3.6-27B model card</a></li>
+            <li><a href="https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/tree/main">Qwen3.6-27B GGUF artifacts</a></li>
+            <li><a href="https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b">Nemotron 3.5 ASR Streaming</a></li>
+            <li><a href="https://huggingface.co/nvidia/magpie_tts_multilingual_357m">MagpieTTS</a></li>
+            <li><a href="https://huggingface.co/hexgrad/Kokoro-82M">Kokoro-82M</a></li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Runtimes and platform</h3>
+          <ul>
+            <li><a href="https://github.com/NVIDIA/NeMo-Speech.cpp">NeMo-Speech.cpp</a></li>
+            <li><a href="https://github.com/NVIDIA/NeMo-Speech.cpp/blob/main/docs/build.md">NeMo-Speech.cpp build guide</a></li>
+            <li><a href="https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md">llama.cpp build guide</a></li>
+            <li><a href="https://v2.tauri.app/develop/sidecar/">Tauri sidecars</a></li>
+            <li><a href="https://v2.tauri.app/distribute/windows-installer/">Tauri Windows installers</a></li>
+            <li><a href="https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/">CUDA release notes</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <p><strong>Scope:</strong> one Windows 11 desktop, one RTX 3090, English-first conversation, one fixed voice, no tools, no voice cloning, no persistent history, and no telemetry. Every model decision remains subordinate to measured combined latency and memory on the target machine.</p>
+    </footer>
+  </main>
+</body>
+</html>
