@@ -82,6 +82,15 @@ cmake --build $llamaBuild --config Release --target llama-server --parallel $Job
 if ($LASTEXITCODE -ne 0) { throw "llama.cpp build failed ($LASTEXITCODE)" }
 
 $nemoBuild = Join-Path $build "nemo-speech.cpp-vcpkg"
+$nemoPatch = Join-Path $workspace "patches\nemo-speech\0001-link-absl-flags.patch"
+git -C $nemoSource apply --check $nemoPatch 2>$null
+if ($LASTEXITCODE -eq 0) {
+    git -C $nemoSource apply $nemoPatch
+    if ($LASTEXITCODE -ne 0) { throw "FastTalk NeMo patch failed to apply ($LASTEXITCODE)" }
+} else {
+    git -C $nemoSource apply --reverse --check $nemoPatch 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "FastTalk NeMo patch is neither applicable nor already applied." }
+}
 & (Join-Path $nemoSource "scripts\windows\apply-ggml-patches.ps1")
 if ($LASTEXITCODE -ne 0) { throw "NeMo-Speech.cpp ggml patch setup failed ($LASTEXITCODE)" }
 cmake -S $nemoSource -B $nemoBuild -G Ninja `

@@ -1,0 +1,13 @@
+diff --git a/src/asr/CMakeLists.txt b/src/asr/CMakeLists.txt
+--- a/src/asr/CMakeLists.txt
++++ b/src/asr/CMakeLists.txt
+@@ -110,7 +110,8 @@ if(WIN32)
+     find_package(absl CONFIG QUIET)
+     if(absl_FOUND)
+         target_link_libraries(nemo_speech_asr PRIVATE
+-            absl::flat_hash_map absl::flat_hash_set absl::strings absl::str_format absl::hash)
++            absl::flat_hash_map absl::flat_hash_set absl::strings absl::str_format absl::hash
++            absl::flags)
+     endif()
+     find_package(protobuf CONFIG QUIET)
+     if(TARGET protobuf::libprotobuf)
