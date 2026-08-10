@@ -3,8 +3,8 @@ use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, Message, MessageRole, SessionHistory,
 };
 use fasttalk_pipeline::{
-    AsrEvent, CancellationToken, ChatMessage, LlmClient, LlmEvent, MagpieClient, PipelineError,
-    RealtimeAsrClient, TtsEvent,
+    AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
+    PipelineError, RealtimeAsrClient, TtsEvent,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -278,24 +278,86 @@ async fn synthesize_clause(
     audio: &SharedAudio,
     cancellation: CancellationToken,
 ) -> Result<(), PipelineError> {
-    let tts = MagpieClient::new("http://127.0.0.1:18081")?;
+    match synthesize_with_backend(TtsBackend::Magpie, clause, audio, cancellation.clone()).await {
+        Ok(()) => Ok(()),
+        Err(error) if !error.pcm_emitted && !matches!(&error.source, PipelineError::Cancelled) => {
+            log::warn!(
+                "Magpie failed before producing PCM; retrying clause on CPU Kokoro: {}",
+                error.source
+            );
+            synthesize_with_backend(TtsBackend::Kokoro, clause, audio, cancellation)
+                .await
+                .map_err(|error| error.source)
+        }
+        Err(error) => Err(error.source),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TtsBackend {
+    Magpie,
+    Kokoro,
+}
+
+struct TtsAttemptError {
+    source: PipelineError,
+    pcm_emitted: bool,
+}
+
+async fn synthesize_with_backend(
+    backend: TtsBackend,
+    clause: &str,
+    audio: &SharedAudio,
+    cancellation: CancellationToken,
+) -> Result<(), TtsAttemptError> {
     let (events, mut receiver) = mpsc::channel(16);
     let text = clause.to_owned();
     let tts_cancellation = cancellation.clone();
     let task = tauri::async_runtime::spawn(async move {
-        tts.synthesize(&text, tts_cancellation, events).await
+        match backend {
+            TtsBackend::Magpie => {
+                MagpieClient::new("http://127.0.0.1:18081")?
+                    .synthesize(&text, tts_cancellation, events)
+                    .await
+            }
+            TtsBackend::Kokoro => {
+                KokoroClient::new("http://127.0.0.1:18082")?
+                    .synthesize(&text, tts_cancellation, events)
+                    .await
+            }
+        }
     });
 
-    while let Some(event) = cancelled_receive(&cancellation, &mut receiver).await? {
+    let mut pcm_emitted = false;
+    while let Some(event) = cancelled_receive(&cancellation, &mut receiver)
+        .await
+        .map_err(|source| TtsAttemptError {
+            source,
+            pcm_emitted,
+        })?
+    {
         match event {
             TtsEvent::Pcm48KhzMono(samples) => {
-                queue_with_backpressure(audio, &samples, &cancellation).await?;
+                pcm_emitted = true;
+                queue_with_backpressure(audio, &samples, &cancellation)
+                    .await
+                    .map_err(|source| TtsAttemptError {
+                        source,
+                        pcm_emitted,
+                    })?;
             }
             TtsEvent::Completed => break,
         }
     }
     task.await
-        .map_err(|error| PipelineError::Protocol(format!("TTS task failed: {error}")))?
+        .map_err(|error| TtsAttemptError {
+            source: PipelineError::Protocol(format!("TTS task failed: {error}")),
+            pcm_emitted,
+        })?
+        .map_err(|source| TtsAttemptError {
+            source,
+            pcm_emitted,
+        })
 }
 
 async fn queue_with_backpressure(

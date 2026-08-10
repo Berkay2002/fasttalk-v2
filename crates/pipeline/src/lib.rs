@@ -5,7 +5,7 @@ mod tts;
 pub use asr::{AsrEvent, AsrReceiver, AsrSender, RealtimeAsrClient};
 pub use llm::{ChatMessage, LlmClient, LlmEvent};
 pub use tokio_util::sync::CancellationToken;
-pub use tts::{MagpieClient, TtsEvent};
+pub use tts::{KokoroClient, MagpieClient, TtsEvent};
 
 use std::net::SocketAddr;
 

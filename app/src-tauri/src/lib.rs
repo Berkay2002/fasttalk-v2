@@ -236,6 +236,7 @@ fn invalid_transition(error: fasttalk_conversation::InvalidTransition) -> Comman
 fn workers_ready(status: &NativeRuntimeStatus) -> bool {
     status.llm.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
         && status.speech.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+        && status.kokoro.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
 }
 
 fn lock<'a, T>(

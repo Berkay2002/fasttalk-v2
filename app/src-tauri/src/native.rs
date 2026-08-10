@@ -9,18 +9,21 @@ use std::time::Duration;
 
 const LLM_PORT: u16 = 18_080;
 const SPEECH_PORT: u16 = 18_081;
+const KOKORO_PORT: u16 = 18_082;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeRuntimeStatus {
     pub llm: Option<WorkerStatus>,
     pub speech: Option<WorkerStatus>,
+    pub kokoro: Option<WorkerStatus>,
 }
 
 pub struct NativeRuntime {
     root: PathBuf,
     llm: Option<WorkerSupervisor>,
     speech: Option<WorkerSupervisor>,
+    kokoro: Option<WorkerSupervisor>,
 }
 
 impl NativeRuntime {
@@ -29,22 +32,30 @@ impl NativeRuntime {
             root: Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
             llm: None,
             speech: None,
+            kokoro: None,
         }
     }
 
     pub fn start(&mut self) -> Result<NativeRuntimeStatus, SupervisorError> {
-        if self.llm.is_some() || self.speech.is_some() {
+        if self.llm.is_some() || self.speech.is_some() || self.kokoro.is_some() {
             return self.poll();
         }
         let mut llm = self.build_llm()?;
         let mut speech = self.build_speech()?;
+        let mut kokoro = self.build_kokoro()?;
         llm.start()?;
         if let Err(error) = speech.start() {
             let _ = llm.stop();
             return Err(error);
         }
+        if let Err(error) = kokoro.start() {
+            let _ = speech.stop();
+            let _ = llm.stop();
+            return Err(error);
+        }
         self.llm = Some(llm);
         self.speech = Some(speech);
+        self.kokoro = Some(kokoro);
         self.poll()
     }
 
@@ -56,10 +67,18 @@ impl NativeRuntime {
                 .as_mut()
                 .map(WorkerSupervisor::poll)
                 .transpose()?,
+            kokoro: self
+                .kokoro
+                .as_mut()
+                .map(WorkerSupervisor::poll)
+                .transpose()?,
         })
     }
 
     pub fn stop(&mut self) -> Result<NativeRuntimeStatus, SupervisorError> {
+        if let Some(worker) = self.kokoro.as_mut() {
+            worker.stop()?;
+        }
         if let Some(worker) = self.speech.as_mut() {
             worker.stop()?;
         }
@@ -69,9 +88,11 @@ impl NativeRuntime {
         let status = NativeRuntimeStatus {
             llm: self.llm.as_ref().map(WorkerSupervisor::status),
             speech: self.speech.as_ref().map(WorkerSupervisor::status),
+            kokoro: self.kokoro.as_ref().map(WorkerSupervisor::status),
         };
         self.llm = None;
         self.speech = None;
+        self.kokoro = None;
         Ok(status)
     }
 
@@ -173,6 +194,43 @@ impl NativeRuntime {
             RestartPolicy::default(),
         )
     }
+
+    fn build_kokoro(&self) -> Result<WorkerSupervisor, SupervisorError> {
+        let executable = self.root.join("runtime/tts/kokoro-worker.exe");
+        let model_dir = self.root.join(".cache/models/kokoro-sherpa");
+        let arguments = os_arguments([
+            "--model-dir",
+            path_text(&model_dir)?,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "18082",
+            "--threads",
+            "4",
+        ]);
+        WorkerSupervisor::new(
+            WorkerSpec {
+                id: "kokoro".to_owned(),
+                working_directory: executable
+                    .parent()
+                    .ok_or_else(|| SupervisorError::InvalidSpec("invalid Kokoro path".to_owned()))?
+                    .to_path_buf(),
+                executable,
+                arguments,
+                environment: Vec::new(),
+                endpoint_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            },
+            Box::new(
+                LoopbackHealthProbe::new(
+                    SocketAddr::from((Ipv4Addr::LOCALHOST, KOKORO_PORT)),
+                    "/ready",
+                    Duration::from_millis(200),
+                )
+                .map_err(SupervisorError::InvalidSpec)?,
+            ),
+            RestartPolicy::default(),
+        )
+    }
 }
 
 fn path_text(path: &Path) -> Result<&str, SupervisorError> {
@@ -202,7 +260,7 @@ fn worker_environment(root: &Path) -> Vec<(OsString, OsString)> {
 mod tests {
     use super::*;
     use fasttalk_pipeline::{
-        AsrEvent, CancellationToken, ChatMessage, LlmClient, LlmEvent, MagpieClient,
+        AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
         RealtimeAsrClient, TtsEvent,
     };
     use fasttalk_runtime::WorkerState;
@@ -218,6 +276,7 @@ mod tests {
         while Instant::now() < deadline {
             if status.llm.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
                 && status.speech.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+                && status.kokoro.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
             {
                 runtime.stop().unwrap();
                 return;
@@ -228,6 +287,10 @@ mod tests {
             );
             assert_ne!(
                 status.speech.as_ref().map(|worker| &worker.state),
+                Some(&WorkerState::Failed)
+            );
+            assert_ne!(
+                status.kokoro.as_ref().map(|worker| &worker.state),
                 Some(&WorkerState::Failed)
             );
             std::thread::sleep(Duration::from_secs(1));
@@ -281,11 +344,40 @@ mod tests {
         tts_task.await.unwrap().unwrap();
         assert!(pcm_samples > 24_000);
 
+        let kokoro = KokoroClient::new("http://127.0.0.1:18082").unwrap();
+        let (kokoro_tx, mut kokoro_rx) = mpsc::channel(64);
+        let kokoro_started = Instant::now();
+        let kokoro_task = tokio::spawn(async move {
+            kokoro
+                .synthesize(
+                    "FastTalk can move speech synthesis to the CPU when GPU memory is constrained.",
+                    CancellationToken::new(),
+                    kokoro_tx,
+                )
+                .await
+        });
+        let mut kokoro_first_pcm_ms = None;
+        let mut kokoro_samples = 0;
+        while let Some(event) = kokoro_rx.recv().await {
+            match event {
+                TtsEvent::Pcm48KhzMono(samples) => {
+                    kokoro_first_pcm_ms
+                        .get_or_insert_with(|| kokoro_started.elapsed().as_secs_f64() * 1_000.0);
+                    kokoro_samples += samples.len();
+                }
+                TtsEvent::Completed => break,
+            }
+        }
+        kokoro_task.await.unwrap().unwrap();
+        assert!(kokoro_samples > 24_000);
+
         println!("asr_final_ms={asr_ms:.3}");
         println!("llm_cold_first_delta_ms={llm_cold_first_delta_ms:.3}");
         println!("llm_warm_first_delta_ms={llm_warm_first_delta_ms:.3}");
         println!("tts_first_pcm_ms={:.3}", first_pcm_ms.unwrap());
         println!("tts_pcm_48khz_samples={pcm_samples}");
+        println!("kokoro_first_pcm_ms={:.3}", kokoro_first_pcm_ms.unwrap());
+        println!("kokoro_pcm_48khz_samples={kokoro_samples}");
         runtime.stop().unwrap();
     }
 
@@ -295,6 +387,7 @@ mod tests {
         while Instant::now() < deadline {
             if status.llm.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
                 && status.speech.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+                && status.kokoro.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
             {
                 return;
             }

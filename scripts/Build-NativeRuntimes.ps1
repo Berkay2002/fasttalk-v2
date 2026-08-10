@@ -115,14 +115,21 @@ if ($LASTEXITCODE -ne 0) { throw "NeMo-Speech.cpp configure failed ($LASTEXITCOD
 cmake --build $nemoBuild --config Release --parallel $Jobs
 if ($LASTEXITCODE -ne 0) { throw "NeMo-Speech.cpp build failed ($LASTEXITCODE)" }
 
+cargo build --manifest-path (Join-Path $workspace "Cargo.toml") `
+    --package fasttalk-kokoro-worker --release --locked
+if ($LASTEXITCODE -ne 0) { throw "Kokoro worker build failed ($LASTEXITCODE)" }
+
 $llamaBin = Join-Path $llamaBuild "bin"
 $nemoBin = Join-Path $nemoBuild "bin"
 $llamaRuntime = Join-Path $runtime "llm"
 $nemoRuntime = Join-Path $runtime "asr"
+$kokoroRuntime = Join-Path $runtime "tts"
 $cudaRuntime = Join-Path $runtime "cuda-$($settings.target.cudaToolkitVersion)"
-New-Item -ItemType Directory -Force -Path $llamaRuntime, $nemoRuntime, $cudaRuntime | Out-Null
+New-Item -ItemType Directory -Force -Path $llamaRuntime, $nemoRuntime, $kokoroRuntime, $cudaRuntime | Out-Null
 Copy-Item -Path (Join-Path $llamaBin "*") -Destination $llamaRuntime -Recurse -Force
 Copy-Item -Path (Join-Path $nemoBin "*") -Destination $nemoRuntime -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $workspace "target/release/fasttalk-kokoro-worker.exe") `
+    -Destination (Join-Path $kokoroRuntime "kokoro-worker.exe") -Force
 
 $cudaRedistributables = @(
     "cublas64_13.dll",
@@ -142,10 +149,12 @@ foreach ($fileName in $cudaRedistributables) {
 
 $llamaExe = Join-Path $llamaRuntime "llama-server.exe"
 $nemoExe = Join-Path $nemoRuntime "nemo-speech.exe"
-foreach ($executable in $llamaExe, $nemoExe) {
+$kokoroExe = Join-Path $kokoroRuntime "kokoro-worker.exe"
+foreach ($executable in $llamaExe, $nemoExe, $kokoroExe) {
     if (-not (Test-Path -LiteralPath $executable)) { throw "Expected executable missing: $executable" }
 }
 
 Write-Host "llama-server: $llamaExe"
 Write-Host "nemo-speech: $nemoExe"
+Write-Host "kokoro-worker: $kokoroExe"
 Write-Host "CUDA runtime: $cudaRuntime"

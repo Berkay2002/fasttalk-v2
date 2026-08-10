@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 const MAGPIE_SAMPLE_RATE: u32 = 22_050;
 const PLAYBACK_SAMPLE_RATE: u32 = 48_000;
+const KOKORO_SAMPLE_RATE: u32 = 24_000;
 const RESAMPLER_INPUT_CHUNK: usize = 256;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,7 +62,7 @@ impl MagpieClient {
         }
         let mut stream = response.bytes_stream();
         let mut trailing_byte = None;
-        let mut resampler = StreamingResampler::new()?;
+        let mut resampler = StreamingResampler::new(MAGPIE_SAMPLE_RATE)?;
         loop {
             let chunk = tokio::select! {
                 _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
@@ -96,8 +97,93 @@ impl MagpieClient {
     }
 }
 
+pub struct KokoroClient {
+    client: reqwest::Client,
+    endpoint: String,
+}
+
+impl KokoroClient {
+    pub fn new(base_url: &str) -> Result<Self, PipelineError> {
+        validate_loopback_endpoint(base_url, "http")?;
+        Ok(Self {
+            client: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .map_err(PipelineError::Http)?,
+            endpoint: format!("{}/v1/audio/speech", base_url.trim_end_matches('/')),
+        })
+    }
+
+    pub async fn synthesize(
+        &self,
+        text: &str,
+        cancellation: CancellationToken,
+        events: mpsc::Sender<TtsEvent>,
+    ) -> Result<(), PipelineError> {
+        let response = self
+            .client
+            .post(&self.endpoint)
+            .json(&serde_json::json!({
+                "input": text,
+                "voice": "10",
+                "language": "en-US",
+                "sample_rate": KOKORO_SAMPLE_RATE,
+                "response_format": "pcm"
+            }))
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(PipelineError::Worker {
+                status: status.as_u16(),
+                message: response.text().await.unwrap_or_default(),
+            });
+        }
+        let mut stream = response.bytes_stream();
+        let mut trailing_byte = None;
+        let mut resampler = StreamingResampler::new(KOKORO_SAMPLE_RATE)?;
+        loop {
+            let chunk = tokio::select! {
+                _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
+                chunk = stream.next() => chunk,
+            };
+            let Some(chunk) = chunk else { break };
+            let chunk = chunk?;
+            send_resampled(
+                &events,
+                resampler.push(&decode_pcm16(&chunk, &mut trailing_byte))?,
+            )
+            .await?;
+        }
+        if trailing_byte.is_some() {
+            return Err(PipelineError::Protocol(
+                "Kokoro worker returned an odd number of PCM16 bytes".to_owned(),
+            ));
+        }
+        send_resampled(&events, resampler.finish()?).await?;
+        events
+            .send(TtsEvent::Completed)
+            .await
+            .map_err(|_| PipelineError::Cancelled)
+    }
+}
+
+async fn send_resampled(
+    events: &mpsc::Sender<TtsEvent>,
+    samples: Vec<f32>,
+) -> Result<(), PipelineError> {
+    if samples.is_empty() {
+        return Ok(());
+    }
+    events
+        .send(TtsEvent::Pcm48KhzMono(samples))
+        .await
+        .map_err(|_| PipelineError::Cancelled)
+}
+
 struct StreamingResampler {
     inner: SincFixedIn<f32>,
+    input_sample_rate: u32,
     pending: Vec<f32>,
     pending_offset: usize,
     input_samples: usize,
@@ -105,7 +191,7 @@ struct StreamingResampler {
 }
 
 impl StreamingResampler {
-    fn new() -> Result<Self, PipelineError> {
+    fn new(input_sample_rate: u32) -> Result<Self, PipelineError> {
         let sinc_len = 128;
         let window = WindowFunction::Blackman2;
         let parameters = SincInterpolationParameters {
@@ -116,7 +202,7 @@ impl StreamingResampler {
             window,
         };
         let inner = SincFixedIn::new(
-            PLAYBACK_SAMPLE_RATE as f64 / MAGPIE_SAMPLE_RATE as f64,
+            PLAYBACK_SAMPLE_RATE as f64 / input_sample_rate as f64,
             1.0,
             parameters,
             RESAMPLER_INPUT_CHUNK,
@@ -125,6 +211,7 @@ impl StreamingResampler {
         .map_err(|error| PipelineError::Protocol(format!("TTS resampler init failed: {error}")))?;
         Ok(Self {
             inner,
+            input_sample_rate,
             pending: Vec::with_capacity(RESAMPLER_INPUT_CHUNK * 2),
             pending_offset: 0,
             input_samples: 0,
@@ -163,7 +250,7 @@ impl StreamingResampler {
             })?;
         let mut output = partial[0].clone();
         let expected_total = ((self.input_samples as u128 * PLAYBACK_SAMPLE_RATE as u128)
-            / MAGPIE_SAMPLE_RATE as u128) as usize;
+            / self.input_sample_rate as u128) as usize;
         let remaining_output = expected_total.saturating_sub(self.output_samples);
         output.truncate(remaining_output);
         if output.len() < remaining_output {
@@ -221,7 +308,7 @@ mod tests {
                 (index as f32 * 440.0 * std::f32::consts::TAU / MAGPIE_SAMPLE_RATE as f32).sin()
             })
             .collect::<Vec<_>>();
-        let mut resampler = StreamingResampler::new().unwrap();
+        let mut resampler = StreamingResampler::new(MAGPIE_SAMPLE_RATE).unwrap();
         let mut output = Vec::new();
         for chunk in input.chunks(317) {
             output.extend(resampler.push(chunk).unwrap());
@@ -235,7 +322,7 @@ mod tests {
     fn streaming_resampler_preserves_short_clause_durations() {
         for input_len in [1, 10, 255, 256, 257, 1_000] {
             let input = vec![0.25; input_len];
-            let mut resampler = StreamingResampler::new().unwrap();
+            let mut resampler = StreamingResampler::new(MAGPIE_SAMPLE_RATE).unwrap();
             let mut output = resampler.push(&input).unwrap();
             output.extend(resampler.finish().unwrap());
             let expected = input_len * PLAYBACK_SAMPLE_RATE as usize / MAGPIE_SAMPLE_RATE as usize;
