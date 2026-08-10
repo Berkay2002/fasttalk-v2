@@ -37,6 +37,7 @@ pub struct AudioStatus {
     pub output_device: String,
     pub sample_rate_hz: u32,
     pub speech_active: bool,
+    pub queued_playback_samples: usize,
     pub dropped_capture_samples: u64,
     pub dropped_playback_samples: u64,
     pub dropped_asr_samples: u64,
@@ -252,7 +253,7 @@ impl AudioEngine {
     }
 
     pub fn queue_playback(&mut self, samples_48khz_mono: &[f32]) -> Result<(), AudioError> {
-        let accepted = self.playback_producer.push_slice(samples_48khz_mono);
+        let accepted = self.queue_playback_partial(samples_48khz_mono);
         if accepted == samples_48khz_mono.len() {
             Ok(())
         } else {
@@ -265,6 +266,10 @@ impl AudioEngine {
                 requested: samples_48khz_mono.len(),
             })
         }
+    }
+
+    pub fn queue_playback_partial(&mut self, samples_48khz_mono: &[f32]) -> usize {
+        self.playback_producer.push_slice(samples_48khz_mono)
     }
 
     pub fn cancel_playback(&self) {
@@ -287,6 +292,7 @@ impl AudioEngine {
             output_device: self.output_device.clone(),
             sample_rate_hz: DEVICE_SAMPLE_RATE,
             speech_active: self.shared.speech_active.load(Ordering::Acquire),
+            queued_playback_samples: self.playback_producer.occupied_len(),
             dropped_capture_samples: self.shared.dropped_capture.load(Ordering::Relaxed),
             dropped_playback_samples: self.shared.dropped_playback.load(Ordering::Relaxed),
             dropped_asr_samples: self.shared.dropped_asr.load(Ordering::Relaxed),

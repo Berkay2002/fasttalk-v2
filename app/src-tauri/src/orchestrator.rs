@@ -1,0 +1,543 @@
+use fasttalk_audio::AudioEngine;
+use fasttalk_conversation::{
+    ConversationEngine, ConversationEvent, ConversationState, Message, MessageRole, SessionHistory,
+};
+use fasttalk_pipeline::{
+    AsrEvent, CancellationToken, ChatMessage, LlmClient, LlmEvent, MagpieClient, PipelineError,
+    RealtimeAsrClient, TtsEvent,
+};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tauri::async_runtime::JoinHandle;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc;
+
+const ENDPOINT_SILENCE: Duration = Duration::from_millis(300);
+const AUDIO_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PLAYBACK_DRAIN_GUARD: Duration = Duration::from_millis(30);
+
+pub type SharedEngine = Arc<Mutex<ConversationEngine>>;
+pub type SharedAudio = Arc<Mutex<Option<AudioEngine>>>;
+
+pub struct ConversationController {
+    cancellation: CancellationToken,
+    control: mpsc::UnboundedSender<Control>,
+    task: JoinHandle<()>,
+}
+
+impl ConversationController {
+    pub fn interrupt(&self) -> Result<(), &'static str> {
+        self.control
+            .send(Control::Interrupt)
+            .map_err(|_| "conversation task is not running")
+    }
+
+    pub async fn stop(self) {
+        self.cancellation.cancel();
+        let _ = self.task.await;
+    }
+}
+
+pub fn start(app: AppHandle, engine: SharedEngine, audio: SharedAudio) -> ConversationController {
+    let cancellation = CancellationToken::new();
+    let task_cancellation = cancellation.clone();
+    let (control, control_receiver) = mpsc::unbounded_channel();
+    let task = tauri::async_runtime::spawn(async move {
+        if let Err(error) = run(
+            app.clone(),
+            engine.clone(),
+            audio,
+            task_cancellation,
+            control_receiver,
+        )
+        .await
+            && !matches!(error, PipelineError::Cancelled)
+        {
+            log::error!("conversation pipeline failed: {error}");
+            let _ = apply_event(
+                &app,
+                &engine,
+                ConversationEvent::Fail {
+                    message: error.to_string(),
+                },
+            );
+        }
+    });
+    ConversationController {
+        cancellation,
+        control,
+        task,
+    }
+}
+
+async fn run(
+    app: AppHandle,
+    engine: SharedEngine,
+    audio: SharedAudio,
+    cancellation: CancellationToken,
+    mut control: mpsc::UnboundedReceiver<Control>,
+) -> Result<(), PipelineError> {
+    let asr = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime")?;
+    let (mut asr_sender, mut asr_receiver) = asr.connect().await?;
+    let history = Arc::new(Mutex::new(SessionHistory::new(12)));
+    let mut activity = VoiceActivity::default();
+    let mut awaiting_commit = false;
+    let mut turn: Option<(CancellationToken, JoinHandle<()>)> = None;
+    let mut audio_samples = [0.0_f32; 1_600];
+    let mut interval = tokio::time::interval(AUDIO_POLL_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            _ = cancellation.cancelled() => break,
+            command = control.recv() => {
+                let Some(Control::Interrupt) = command else { continue };
+                interrupt_turn(&app, &engine, &audio, &mut turn)?;
+            }
+            _ = interval.tick() => {
+                reap_finished_turn(&mut turn).await;
+                let (sample_count, speech_active) = read_audio(&audio, &mut audio_samples)?;
+                if sample_count > 0 && !awaiting_commit {
+                    asr_sender.send_f32(&audio_samples[..sample_count]).await?;
+                }
+
+                let state = snapshot_state(&engine)?;
+                let decision = activity.update(speech_active, state, Instant::now());
+                if decision.interrupt {
+                    interrupt_turn(&app, &engine, &audio, &mut turn)?;
+                }
+                if decision.commit && !awaiting_commit {
+                    asr_sender.commit().await?;
+                    awaiting_commit = true;
+                }
+            }
+            event = asr_receiver.next_event() => {
+                let Some(event) = event else {
+                    return Err(PipelineError::Protocol("ASR stream closed unexpectedly".to_owned()));
+                };
+                match event? {
+                    AsrEvent::SessionReady => {}
+                    AsrEvent::Partial(text) => {
+                        if snapshot_state(&engine)? == ConversationState::Listening {
+                            apply_event(
+                                &app,
+                                &engine,
+                                ConversationEvent::PartialTranscript { text },
+                            )?;
+                        }
+                    }
+                    AsrEvent::Final(transcript) => {
+                        let transcript = transcript.trim().to_owned();
+                        if !transcript.is_empty()
+                            && snapshot_state(&engine)? == ConversationState::Listening
+                        {
+                            apply_event(
+                                &app,
+                                &engine,
+                                ConversationEvent::EndOfSpeech {
+                                    transcript: transcript.clone(),
+                                },
+                            )?;
+                            cancel_turn(&mut turn);
+                            push_history(&history, MessageRole::User, transcript)?;
+                            turn = Some(spawn_turn(
+                                app.clone(),
+                                engine.clone(),
+                                audio.clone(),
+                                history.clone(),
+                            ));
+                        }
+                    }
+                    AsrEvent::Committed | AsrEvent::Cleared => {
+                        awaiting_commit = false;
+                    }
+                }
+            }
+        }
+    }
+
+    cancel_turn(&mut turn);
+    if let Some((_, task)) = turn.take() {
+        let _ = task.await;
+    }
+    asr_sender.close().await?;
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Control {
+    Interrupt,
+}
+
+fn interrupt_turn(
+    app: &AppHandle,
+    engine: &SharedEngine,
+    audio: &SharedAudio,
+    turn: &mut Option<(CancellationToken, JoinHandle<()>)>,
+) -> Result<(), PipelineError> {
+    if matches!(
+        snapshot_state(engine)?,
+        ConversationState::Thinking | ConversationState::Speaking | ConversationState::Listening
+    ) {
+        cancel_turn(turn);
+        cancel_playback(audio)?;
+        apply_event(app, engine, ConversationEvent::Interrupt)?;
+        apply_event(app, engine, ConversationEvent::StartListening)?;
+    }
+    Ok(())
+}
+
+fn spawn_turn(
+    app: AppHandle,
+    engine: SharedEngine,
+    audio: SharedAudio,
+    history: Arc<Mutex<SessionHistory>>,
+) -> (CancellationToken, JoinHandle<()>) {
+    let cancellation = CancellationToken::new();
+    let task_cancellation = cancellation.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        if let Err(error) = run_turn(&app, &engine, &audio, &history, task_cancellation).await
+            && !matches!(error, PipelineError::Cancelled)
+        {
+            log::error!("conversation turn failed: {error}");
+            let _ = apply_event(
+                &app,
+                &engine,
+                ConversationEvent::Fail {
+                    message: error.to_string(),
+                },
+            );
+        }
+    });
+    (cancellation, task)
+}
+
+async fn run_turn(
+    app: &AppHandle,
+    engine: &SharedEngine,
+    audio: &SharedAudio,
+    history: &Arc<Mutex<SessionHistory>>,
+    cancellation: CancellationToken,
+) -> Result<(), PipelineError> {
+    let messages = chat_messages(history)?;
+    let llm = LlmClient::new("http://127.0.0.1:18080")?;
+    let (events, mut receiver) = mpsc::channel(64);
+    let llm_cancellation = cancellation.clone();
+    let llm_task = tauri::async_runtime::spawn(async move {
+        llm.stream_reply(messages, llm_cancellation, events).await
+    });
+    let mut saw_first_token = false;
+    let mut answer = None;
+
+    while let Some(event) = cancelled_receive(&cancellation, &mut receiver).await? {
+        match event {
+            LlmEvent::Delta(_) if !saw_first_token => {
+                saw_first_token = true;
+                apply_event(app, engine, ConversationEvent::FirstToken)?;
+            }
+            LlmEvent::Delta(_) => {}
+            LlmEvent::Clause(clause) => {
+                apply_event(
+                    app,
+                    engine,
+                    ConversationEvent::ClauseReady {
+                        text: clause.clone(),
+                    },
+                )?;
+                synthesize_clause(&clause, audio, cancellation.clone()).await?;
+            }
+            LlmEvent::Completed(completed) => {
+                answer = Some(completed);
+                break;
+            }
+        }
+    }
+
+    let generated = llm_task
+        .await
+        .map_err(|error| PipelineError::Protocol(format!("LLM task failed: {error}")))??;
+    let answer = answer.unwrap_or(generated);
+    push_history(history, MessageRole::Assistant, answer)?;
+    wait_for_playback_drain(audio, &cancellation).await?;
+    apply_event(app, engine, ConversationEvent::PlaybackDrained)?;
+    Ok(())
+}
+
+async fn cancelled_receive<T>(
+    cancellation: &CancellationToken,
+    receiver: &mut mpsc::Receiver<T>,
+) -> Result<Option<T>, PipelineError> {
+    tokio::select! {
+        _ = cancellation.cancelled() => Err(PipelineError::Cancelled),
+        event = receiver.recv() => Ok(event),
+    }
+}
+
+async fn synthesize_clause(
+    clause: &str,
+    audio: &SharedAudio,
+    cancellation: CancellationToken,
+) -> Result<(), PipelineError> {
+    let tts = MagpieClient::new("http://127.0.0.1:18081")?;
+    let (events, mut receiver) = mpsc::channel(16);
+    let text = clause.to_owned();
+    let tts_cancellation = cancellation.clone();
+    let task = tauri::async_runtime::spawn(async move {
+        tts.synthesize(&text, tts_cancellation, events).await
+    });
+
+    while let Some(event) = cancelled_receive(&cancellation, &mut receiver).await? {
+        match event {
+            TtsEvent::Pcm48KhzMono(samples) => {
+                queue_with_backpressure(audio, &samples, &cancellation).await?;
+            }
+            TtsEvent::Completed => break,
+        }
+    }
+    task.await
+        .map_err(|error| PipelineError::Protocol(format!("TTS task failed: {error}")))?
+}
+
+async fn queue_with_backpressure(
+    audio: &SharedAudio,
+    samples: &[f32],
+    cancellation: &CancellationToken,
+) -> Result<(), PipelineError> {
+    let mut offset = 0;
+    while offset < samples.len() {
+        let accepted = {
+            let mut guard = audio
+                .lock()
+                .map_err(|_| PipelineError::Protocol("audio lock is poisoned".to_owned()))?;
+            let engine = guard
+                .as_mut()
+                .ok_or_else(|| PipelineError::Protocol("audio is not running".to_owned()))?;
+            engine.queue_playback_partial(&samples[offset..])
+        };
+        offset += accepted;
+        if offset < samples.len() {
+            tokio::select! {
+                _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn wait_for_playback_drain(
+    audio: &SharedAudio,
+    cancellation: &CancellationToken,
+) -> Result<(), PipelineError> {
+    let mut empty_since = None;
+    loop {
+        let queued = audio_status(audio)?.queued_playback_samples;
+        if queued == 0 {
+            let since = empty_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= PLAYBACK_DRAIN_GUARD {
+                return Ok(());
+            }
+        } else {
+            empty_since = None;
+        }
+        tokio::select! {
+            _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
+            _ = tokio::time::sleep(Duration::from_millis(5)) => {}
+        }
+    }
+}
+
+fn read_audio(audio: &SharedAudio, output: &mut [f32]) -> Result<(usize, bool), PipelineError> {
+    let mut guard = audio
+        .lock()
+        .map_err(|_| PipelineError::Protocol("audio lock is poisoned".to_owned()))?;
+    let engine = guard
+        .as_mut()
+        .ok_or_else(|| PipelineError::Protocol("audio is not running".to_owned()))?;
+    let count = engine.read_asr_samples(output);
+    Ok((count, engine.status().speech_active))
+}
+
+fn audio_status(audio: &SharedAudio) -> Result<fasttalk_audio::AudioStatus, PipelineError> {
+    let guard = audio
+        .lock()
+        .map_err(|_| PipelineError::Protocol("audio lock is poisoned".to_owned()))?;
+    guard
+        .as_ref()
+        .map(AudioEngine::status)
+        .ok_or_else(|| PipelineError::Protocol("audio is not running".to_owned()))
+}
+
+fn cancel_playback(audio: &SharedAudio) -> Result<(), PipelineError> {
+    let guard = audio
+        .lock()
+        .map_err(|_| PipelineError::Protocol("audio lock is poisoned".to_owned()))?;
+    let engine = guard
+        .as_ref()
+        .ok_or_else(|| PipelineError::Protocol("audio is not running".to_owned()))?;
+    engine.cancel_playback();
+    Ok(())
+}
+
+fn snapshot_state(engine: &SharedEngine) -> Result<ConversationState, PipelineError> {
+    engine
+        .lock()
+        .map(|engine| engine.snapshot().state)
+        .map_err(|_| PipelineError::Protocol("conversation lock is poisoned".to_owned()))
+}
+
+fn apply_event(
+    app: &AppHandle,
+    engine: &SharedEngine,
+    event: ConversationEvent,
+) -> Result<(), PipelineError> {
+    let snapshot = engine
+        .lock()
+        .map_err(|_| PipelineError::Protocol("conversation lock is poisoned".to_owned()))?
+        .apply(event)
+        .map_err(|error| PipelineError::Protocol(error.to_string()))?;
+    app.emit("conversation-snapshot", snapshot)
+        .map_err(|error| PipelineError::Protocol(format!("emit conversation state: {error}")))
+}
+
+fn chat_messages(history: &Arc<Mutex<SessionHistory>>) -> Result<Vec<ChatMessage>, PipelineError> {
+    let history = history
+        .lock()
+        .map_err(|_| PipelineError::Protocol("history lock is poisoned".to_owned()))?;
+    let mut messages = vec![ChatMessage {
+        role: "system".to_owned(),
+        content: "You are a concise, natural voice assistant. Respond in spoken English without markdown."
+            .to_owned(),
+    }];
+    messages.extend(history.iter().map(|message| {
+        ChatMessage {
+            role: match message.role {
+                MessageRole::User => "user",
+                MessageRole::Assistant => "assistant",
+            }
+            .to_owned(),
+            content: message.text.clone(),
+        }
+    }));
+    Ok(messages)
+}
+
+fn push_history(
+    history: &Arc<Mutex<SessionHistory>>,
+    role: MessageRole,
+    text: String,
+) -> Result<(), PipelineError> {
+    history
+        .lock()
+        .map_err(|_| PipelineError::Protocol("history lock is poisoned".to_owned()))?
+        .push(Message { role, text });
+    Ok(())
+}
+
+fn cancel_turn(turn: &mut Option<(CancellationToken, JoinHandle<()>)>) {
+    if let Some((cancellation, _)) = turn {
+        cancellation.cancel();
+    }
+}
+
+async fn reap_finished_turn(turn: &mut Option<(CancellationToken, JoinHandle<()>)>) {
+    if turn
+        .as_ref()
+        .is_some_and(|(_, task)| task.inner().is_finished())
+        && let Some((_, task)) = turn.take()
+    {
+        let _ = task.await;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct VoiceDecision {
+    interrupt: bool,
+    commit: bool,
+}
+
+#[derive(Debug, Default)]
+struct VoiceActivity {
+    active: bool,
+    speech_seen: bool,
+    last_active: Option<Instant>,
+}
+
+impl VoiceActivity {
+    fn update(&mut self, active: bool, state: ConversationState, now: Instant) -> VoiceDecision {
+        let interrupt = active
+            && !self.active
+            && matches!(
+                state,
+                ConversationState::Thinking | ConversationState::Speaking
+            );
+        if active {
+            self.speech_seen = true;
+            self.last_active = Some(now);
+        }
+        self.active = active;
+        let commit = self.speech_seen
+            && !active
+            && self
+                .last_active
+                .is_some_and(|last_active| now.duration_since(last_active) >= ENDPOINT_SILENCE);
+        if commit {
+            self.speech_seen = false;
+            self.last_active = None;
+        }
+        VoiceDecision { interrupt, commit }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_requires_speech_then_sustained_silence() {
+        let start = Instant::now();
+        let mut activity = VoiceActivity::default();
+        assert_eq!(
+            activity.update(true, ConversationState::Listening, start),
+            VoiceDecision::default()
+        );
+        assert!(
+            !activity
+                .update(
+                    false,
+                    ConversationState::Listening,
+                    start + Duration::from_millis(299)
+                )
+                .commit
+        );
+        assert!(
+            activity
+                .update(
+                    false,
+                    ConversationState::Listening,
+                    start + Duration::from_millis(300)
+                )
+                .commit
+        );
+    }
+
+    #[test]
+    fn speech_onset_during_playback_interrupts_once() {
+        let start = Instant::now();
+        let mut activity = VoiceActivity::default();
+        assert!(
+            activity
+                .update(true, ConversationState::Speaking, start)
+                .interrupt
+        );
+        assert!(
+            !activity
+                .update(
+                    true,
+                    ConversationState::Speaking,
+                    start + Duration::from_millis(10)
+                )
+                .interrupt
+        );
+    }
+}

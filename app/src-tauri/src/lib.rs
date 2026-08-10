@@ -1,25 +1,32 @@
 mod native;
+mod orchestrator;
 
 use fasttalk_audio::{AudioConfig, AudioEngine, AudioStatus};
-use fasttalk_conversation::{ConversationEngine, ConversationEvent, EngineSnapshot};
+use fasttalk_conversation::{
+    ConversationEngine, ConversationEvent, ConversationState, EngineSnapshot,
+};
+use fasttalk_runtime::WorkerState;
 use native::{NativeRuntime, NativeRuntimeStatus};
+use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::Serialize;
-use std::sync::Mutex;
-use tauri::State;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, State};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 struct AppState {
-    engine: Mutex<ConversationEngine>,
-    audio: Mutex<Option<AudioEngine>>,
+    engine: SharedEngine,
+    audio: SharedAudio,
     runtime: Mutex<NativeRuntime>,
+    conversation: Mutex<Option<ConversationController>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            engine: Mutex::new(ConversationEngine::default()),
-            audio: Mutex::new(None),
+            engine: Arc::new(Mutex::new(ConversationEngine::default())),
+            audio: Arc::new(Mutex::new(None)),
             runtime: Mutex::new(NativeRuntime::for_development_checkout()),
+            conversation: Mutex::new(None),
         }
     }
 }
@@ -100,11 +107,91 @@ fn audio_cancel(state: State<'_, AppState>) -> Result<Option<AudioStatus>, Comma
 
 #[tauri::command]
 fn audio_stop(state: State<'_, AppState>) -> Result<(), CommandError> {
+    if lock(&state.conversation, "conversationUnavailable")?.is_some() {
+        return Err(CommandError {
+            code: "conversationActive",
+            message: "stop the conversation before stopping audio".to_owned(),
+        });
+    }
     if let Some(mut audio) = lock(&state.audio, "audioUnavailable")?.take() {
         audio.stop();
         log::info!("native audio stopped");
     }
     Ok(())
+}
+
+#[tauri::command]
+fn conversation_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<EngineSnapshot, CommandError> {
+    let mut controller = lock(&state.conversation, "conversationUnavailable")?;
+    if controller.is_some() {
+        return Ok(lock_engine(&state)?.snapshot());
+    }
+    let workers = lock(&state.runtime, "runtimeUnavailable")?
+        .poll()
+        .map_err(runtime_error)?;
+    if !workers_ready(&workers) {
+        return Err(CommandError {
+            code: "workersNotReady",
+            message: "native ASR, LLM, and TTS workers are not ready".to_owned(),
+        });
+    }
+    if lock(&state.audio, "audioUnavailable")?.is_none() {
+        return Err(CommandError {
+            code: "audioNotReady",
+            message: "native audio is not running".to_owned(),
+        });
+    }
+
+    let snapshot = {
+        let mut engine = lock_engine(&state)?;
+        if engine.snapshot().state != ConversationState::Idle {
+            engine
+                .apply(ConversationEvent::Reset)
+                .map_err(invalid_transition)?;
+        }
+        engine
+            .apply(ConversationEvent::StartListening)
+            .map_err(invalid_transition)?
+    };
+    *controller = Some(orchestrator::start(
+        app,
+        state.engine.clone(),
+        state.audio.clone(),
+    ));
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn conversation_interrupt(state: State<'_, AppState>) -> Result<(), CommandError> {
+    let controller = lock(&state.conversation, "conversationUnavailable")?;
+    controller
+        .as_ref()
+        .ok_or_else(|| CommandError {
+            code: "conversationInactive",
+            message: "conversation is not running".to_owned(),
+        })?
+        .interrupt()
+        .map_err(|message| CommandError {
+            code: "conversationUnavailable",
+            message: message.to_owned(),
+        })
+}
+
+#[tauri::command]
+async fn conversation_stop(state: State<'_, AppState>) -> Result<EngineSnapshot, CommandError> {
+    let controller = { lock(&state.conversation, "conversationUnavailable")?.take() };
+    if let Some(controller) = controller {
+        controller.stop().await;
+    }
+    if let Some(audio) = lock(&state.audio, "audioUnavailable")?.as_ref() {
+        audio.cancel_playback();
+    }
+    lock_engine(&state)?
+        .apply(ConversationEvent::Reset)
+        .map_err(invalid_transition)
 }
 
 #[tauri::command]
@@ -139,6 +226,18 @@ fn runtime_error(error: fasttalk_runtime::SupervisorError) -> CommandError {
     }
 }
 
+fn invalid_transition(error: fasttalk_conversation::InvalidTransition) -> CommandError {
+    CommandError {
+        code: "invalidTransition",
+        message: error.to_string(),
+    }
+}
+
+fn workers_ready(status: &NativeRuntimeStatus) -> bool {
+    status.llm.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+        && status.speech.as_ref().map(|worker| &worker.state) == Some(&WorkerState::Ready)
+}
+
 fn lock<'a, T>(
     mutex: &'a Mutex<T>,
     code: &'static str,
@@ -171,6 +270,9 @@ pub fn run() {
             audio_status,
             audio_cancel,
             audio_stop,
+            conversation_start,
+            conversation_interrupt,
+            conversation_stop,
             runtime_start,
             runtime_status,
             runtime_stop
