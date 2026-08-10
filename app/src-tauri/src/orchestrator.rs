@@ -245,37 +245,58 @@ async fn run_turn(
     let llm_task = tauri::async_runtime::spawn(async move {
         llm.stream_reply(messages, llm_cancellation, events).await
     });
-    let mut saw_first_token = false;
-    let mut answer = None;
-
-    while let Some(event) = cancelled_receive(&cancellation, &mut receiver).await? {
-        match event {
-            LlmEvent::Delta(_) if !saw_first_token => {
-                saw_first_token = true;
-                apply_event(app, engine, ConversationEvent::FirstToken)?;
-            }
-            LlmEvent::Delta(_) => {}
-            LlmEvent::Clause(clause) => {
-                apply_event(
-                    app,
-                    engine,
-                    ConversationEvent::ClauseReady {
-                        text: clause.clone(),
-                    },
-                )?;
-                synthesize_clause(&clause, audio, cancellation.clone(), tts_backend).await?;
-            }
-            LlmEvent::Completed(completed) => {
-                answer = Some(completed);
-                break;
+    let (clauses, mut clause_receiver) = mpsc::channel(8);
+    let generation = async {
+        let mut saw_first_token = false;
+        let mut answer = None;
+        while let Some(event) = cancelled_receive(&cancellation, &mut receiver).await? {
+            match event {
+                LlmEvent::Delta(delta) => {
+                    if !saw_first_token {
+                        saw_first_token = true;
+                        apply_event(app, engine, ConversationEvent::FirstToken)?;
+                    }
+                    apply_event(
+                        app,
+                        engine,
+                        ConversationEvent::AssistantDelta { text: delta },
+                    )?;
+                }
+                LlmEvent::Clause(clause) => clauses
+                    .send(clause)
+                    .await
+                    .map_err(|_| PipelineError::Cancelled)?,
+                LlmEvent::Completed(completed) => {
+                    answer = Some(completed);
+                    break;
+                }
             }
         }
-    }
+        drop(clauses);
+        let generated = llm_task
+            .await
+            .map_err(|error| PipelineError::Protocol(format!("LLM task failed: {error}")))??;
+        Ok::<String, PipelineError>(answer.unwrap_or(generated))
+    };
+    let speech = async {
+        while let Some(clause) = cancelled_receive(&cancellation, &mut clause_receiver).await? {
+            apply_event(
+                app,
+                engine,
+                ConversationEvent::ClauseReady {
+                    text: clause.clone(),
+                },
+            )?;
+            synthesize_clause(&clause, audio, cancellation.clone(), tts_backend).await?;
+        }
+        Ok::<(), PipelineError>(())
+    };
 
-    let generated = llm_task
-        .await
-        .map_err(|error| PipelineError::Protocol(format!("LLM task failed: {error}")))??;
-    let answer = answer.unwrap_or(generated);
+    let result = tokio::try_join!(generation, speech);
+    if result.is_err() {
+        cancellation.cancel();
+    }
+    let (answer, ()) = result?;
     push_history(history, MessageRole::Assistant, answer)?;
     wait_for_playback_drain(audio, &cancellation).await?;
     apply_event(app, engine, ConversationEvent::PlaybackDrained)?;

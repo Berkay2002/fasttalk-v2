@@ -38,6 +38,7 @@ pub enum ConversationEvent {
     PartialTranscript { text: String },
     EndOfSpeech { transcript: String },
     FirstToken,
+    AssistantDelta { text: String },
     ClauseReady { text: String },
     PlaybackDrained,
     Interrupt,
@@ -142,13 +143,12 @@ impl ConversationEngine {
                 self.snapshot.committed_transcript.clone_from(transcript);
             }
             (State::Thinking, Event::FirstToken) => {}
+            (State::Thinking | State::Speaking, Event::AssistantDelta { text }) => {
+                self.snapshot.assistant_transcript.push_str(text);
+            }
             (State::Thinking | State::Speaking, Event::ClauseReady { text }) => {
                 self.snapshot.state = State::Speaking;
                 self.snapshot.pending_clause = Some(text.clone());
-                if !self.snapshot.assistant_transcript.is_empty() {
-                    self.snapshot.assistant_transcript.push(' ');
-                }
-                self.snapshot.assistant_transcript.push_str(text);
             }
             (State::Speaking, Event::PlaybackDrained) => {
                 commit_transcript_turn(&mut self.snapshot);
@@ -309,7 +309,7 @@ impl ClauseChunker {
                 .char_indices()
                 .find(|(index, character)| {
                     index + character.len_utf8() >= self.minimum_chars
-                        && matches!(character, '.' | '!' | '?' | ';' | ':')
+                        && is_clause_boundary(&self.buffer, *index, *character)
                 })
                 .map(|(index, character)| index + character.len_utf8())
                 .or_else(|| {
@@ -335,6 +335,32 @@ impl ClauseChunker {
         let remainder = std::mem::take(&mut self.buffer).trim().to_owned();
         (!remainder.is_empty()).then_some(remainder)
     }
+}
+
+fn is_clause_boundary(text: &str, index: usize, character: char) -> bool {
+    if !matches!(character, '.' | '!' | '?' | ';' | ':') {
+        return false;
+    }
+    if character != '.' {
+        return true;
+    }
+
+    let token = text[..index]
+        .split_whitespace()
+        .next_back()
+        .unwrap_or_default()
+        .trim_matches(|character: char| !character.is_alphanumeric() && character != '.');
+    let normalized = token.to_ascii_lowercase();
+    let is_single_initial = token.chars().count() == 1 && token.chars().all(char::is_alphabetic);
+    let is_initialism = token.contains('.')
+        && token
+            .split('.')
+            .all(|part| part.chars().count() == 1 && part.chars().all(char::is_alphabetic));
+    let is_common_abbreviation = matches!(
+        normalized.as_str(),
+        "mr" | "mrs" | "ms" | "dr" | "prof" | "sr" | "jr" | "st" | "vs" | "etc"
+    );
+    !(is_single_initial || is_initialism || is_common_abbreviation)
 }
 
 fn nth_word_boundary(text: &str, maximum_words: usize) -> Option<usize> {
@@ -385,6 +411,11 @@ mod tests {
         engine
             .apply(ConversationEvent::EndOfSpeech {
                 transcript: "Hello".to_owned(),
+            })
+            .unwrap();
+        engine
+            .apply(ConversationEvent::AssistantDelta {
+                text: "Hi there.".to_owned(),
             })
             .unwrap();
         engine
@@ -457,6 +488,37 @@ mod tests {
     }
 
     #[test]
+    fn clause_chunker_does_not_emit_initials_or_abbreviations() {
+        let mut chunker = ClauseChunker::new(8, 30);
+        assert!(chunker.push("This quote by John F.").is_empty());
+        assert_eq!(
+            chunker.push(" Kennedy is from the U.S. president."),
+            ["This quote by John F. Kennedy is from the U.S. president."]
+        );
+    }
+
+    #[test]
+    fn assistant_deltas_are_visible_before_a_clause_is_ready() {
+        let mut engine = ConversationEngine::default();
+        engine.apply(ConversationEvent::StartListening).unwrap();
+        engine
+            .apply(ConversationEvent::EndOfSpeech {
+                transcript: "Hello".to_owned(),
+            })
+            .unwrap();
+
+        let snapshot = engine
+            .apply(ConversationEvent::AssistantDelta {
+                text: "Streaming".to_owned(),
+            })
+            .unwrap();
+
+        assert_eq!(snapshot.state, ConversationState::Thinking);
+        assert_eq!(snapshot.assistant_transcript, "Streaming");
+        assert!(snapshot.pending_clause.is_none());
+    }
+
+    #[test]
     fn session_history_is_bounded() {
         let mut history = SessionHistory::new(2);
         for text in ["one", "two", "three"] {
@@ -480,6 +542,11 @@ mod tests {
             engine
                 .apply(ConversationEvent::EndOfSpeech {
                     transcript: format!("user {turn}"),
+                })
+                .unwrap();
+            engine
+                .apply(ConversationEvent::AssistantDelta {
+                    text: format!("assistant {turn}"),
                 })
                 .unwrap();
             engine

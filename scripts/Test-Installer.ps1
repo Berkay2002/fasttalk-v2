@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$Installer,
-    [int]$LaunchTimeoutSeconds = 30
+    [int]$LaunchTimeoutSeconds = 30,
+    [switch]$SanitizedEnvironment,
+    [string]$Output
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,8 +30,31 @@ if (Get-FastTalkInstall) {
 }
 
 $install = $null
+$verifiedRuntimeFiles = 0
+$processEnvironment = if ($SanitizedEnvironment) {
+    @{
+        PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+        CUDA_PATH = $null
+        CUDA_HOME = $null
+        NODE_PATH = $null
+        NODE_OPTIONS = $null
+        PYTHONHOME = $null
+        PYTHONPATH = $null
+        RUSTUP_HOME = $null
+        CARGO_HOME = $null
+        VCPKG_ROOT = $null
+    }
+} else { $null }
 try {
-    $process = Start-Process -FilePath $Installer -ArgumentList "/S" -PassThru -Wait -WindowStyle Hidden
+    $startInstaller = @{
+        FilePath = $Installer
+        ArgumentList = "/S"
+        PassThru = $true
+        Wait = $true
+        WindowStyle = "Hidden"
+    }
+    if ($processEnvironment) { $startInstaller.Environment = $processEnvironment }
+    $process = Start-Process @startInstaller
     if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
     $install = Get-FastTalkInstall
     if (-not $install) { throw "Installer did not create a current-user uninstall entry" }
@@ -57,9 +82,12 @@ try {
         if ((Get-FileHash -Algorithm SHA256 $source.FullName).Hash -ne (Get-FileHash -Algorithm SHA256 $installed).Hash) {
             throw "Installed runtime hash mismatch: $relative"
         }
+        $verifiedRuntimeFiles++
     }
 
-    $app = Start-Process -FilePath $installedApp -PassThru
+    $startApp = @{ FilePath = $installedApp; PassThru = $true }
+    if ($processEnvironment) { $startApp.Environment = $processEnvironment }
+    $app = Start-Process @startApp
     $timer = [Diagnostics.Stopwatch]::StartNew()
     while ($timer.Elapsed.TotalSeconds -lt $LaunchTimeoutSeconds -and -not $app.HasExited -and $app.MainWindowHandle -eq 0) {
         Start-Sleep -Milliseconds 250
@@ -74,7 +102,15 @@ try {
     if ($install) {
         $uninstaller = $install.UninstallString.Trim('"')
         if (Test-Path -LiteralPath $uninstaller) {
-            $process = Start-Process -FilePath $uninstaller -ArgumentList "/S" -PassThru -Wait -WindowStyle Hidden
+            $startUninstaller = @{
+                FilePath = $uninstaller
+                ArgumentList = "/S"
+                PassThru = $true
+                Wait = $true
+                WindowStyle = "Hidden"
+            }
+            if ($processEnvironment) { $startUninstaller.Environment = $processEnvironment }
+            $process = Start-Process @startUninstaller
             if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
             Start-Sleep -Seconds 2
         }
@@ -84,6 +120,20 @@ try {
 if (Get-FastTalkInstall) { throw "Uninstaller left the current-user registry entry behind" }
 if ($install -and (Test-Path -LiteralPath $install.InstallLocation.Trim('"'))) {
     throw "Uninstaller left the installation directory behind"
+}
+
+if ($Output) {
+    $outputPath = Join-Path $workspace $Output
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputPath) | Out-Null
+    [ordered]@{
+        schemaVersion = 1
+        installer = $Installer
+        installerSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Installer).Hash.ToLowerInvariant()
+        sanitizedEnvironment = [bool]$SanitizedEnvironment
+        runtimeFilesVerified = $verifiedRuntimeFiles
+        windowOpened = $true
+        uninstallPassed = $true
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $outputPath -Encoding utf8
 }
 
 Write-Host "Installer install, launch, payload, and uninstall checks passed."

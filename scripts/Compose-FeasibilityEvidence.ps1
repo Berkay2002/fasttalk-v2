@@ -1,46 +1,59 @@
 [CmdletBinding()]
 param(
-    [string]$Output = "artifacts/feasibility/measured-evidence.json"
+    [string]$Output = "artifacts/feasibility/measured-evidence.json",
+    [string]$LlamaPath = "artifacts/feasibility/llama-benchmark.json",
+    [string]$ConversationPath = "artifacts/release/conversation-benchmark.json",
+    [string]$SoakPath = $ConversationPath,
+    [switch]$NetworkDisabled
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = Split-Path -Parent $PSScriptRoot
-$llama = Get-Content -Raw (Join-Path $workspace "artifacts/feasibility/llama-benchmark.json") | ConvertFrom-Json
+$resolvedLlamaPath = Join-Path $workspace $LlamaPath
+if (-not (Test-Path -LiteralPath $resolvedLlamaPath -PathType Leaf)) {
+    throw "LLM benchmark evidence is missing: $resolvedLlamaPath"
+}
+$llama = Get-Content -Raw $resolvedLlamaPath | ConvertFrom-Json
 $magpie = Get-Content -Raw (Join-Path $workspace "artifacts/feasibility/magpie-benchmark.json") | ConvertFrom-Json
 $asr = Get-Content -Raw (Join-Path $workspace "artifacts/feasibility/asr-benchmark.json") | ConvertFrom-Json
-$vram = Get-Content -Raw (Join-Path $workspace "artifacts/feasibility/combined-vram.json") | ConvertFrom-Json
-
-$turnLatency = for ($index = 0; $index -lt 20; $index++) {
-    [math]::Round($llama.warmLlmFirstTokenMs[$index] + $magpie.firstAudioMs[$index], 3)
+$resolvedConversationPath = Join-Path $workspace $ConversationPath
+if (-not (Test-Path -LiteralPath $resolvedConversationPath -PathType Leaf)) {
+    throw "Integrated conversation evidence is missing: $resolvedConversationPath"
 }
-$asrUpperBound = @(for ($index = 0; $index -lt 20; $index++) {
-    [double]$asr.partialUpdateUpperBoundMs
-})
+$conversationEvidence = Get-Content -Raw $resolvedConversationPath | ConvertFrom-Json
+$resolvedSoakPath = Join-Path $workspace $SoakPath
+if (-not (Test-Path -LiteralPath $resolvedSoakPath -PathType Leaf)) {
+    throw "Soak evidence is missing: $resolvedSoakPath"
+}
+$soakEvidence = Get-Content -Raw $resolvedSoakPath | ConvertFrom-Json
 
 $evidence = [ordered]@{
     schemaVersion = 1
     profile = [ordered]@{
         llm = $llama.profile
         asr = $asr.profile
-        tts = $magpie.profile
+        tts = if ($conversationEvidence.ttsBackend -eq "magpie") { $magpie.profile } else { "kokoro-82m-int8-cpu" }
     }
     environment = [ordered]@{
         desktopApplicationsOpen = $true
-        networkDisabled = $false
-        notes = "Measured locally on the target RTX 3090. Turn latency pairs warm LLM TTFT with Magpie first audio. ASR partial latency is a documented derived upper bound. Barge-in uses HTTP response cancellation, not acoustic playback silence. The 30 minute integrated soak has not run."
+        networkDisabled = [bool]$NetworkDisabled
+        notes = "Integrated measurements use the pinned prerecorded JFK WAV over the production ASR WebSocket, streamed LLM-to-TTS handoff, and WASAPI output-callback cancellation."
     }
     samples = [ordered]@{
-        endOfSpeechToFirstAudioMs = @($turnLatency)
-        warmLlmFirstTokenMs = @($llama.warmLlmFirstTokenMs)
+        endOfSpeechToFirstAudioMs = @($conversationEvidence.endOfSpeechToFirstAudioMs)
+        warmLlmFirstTokenMs = @($conversationEvidence.warmLlmFirstTokenMs)
         generationTokensPerSecond = @($llama.generationTokensPerSecond)
-        asrPartialUpdateMs = $asrUpperBound
-        bargeInToSilenceMs = @($magpie.responseCancellationMs)
-        combinedWarmedVramMiB = @([double]$vram.combinedWorkerGpuMemoryMiB)
+        asrPartialUpdateMs = @($conversationEvidence.asrPartialUpdateMs)
+        bargeInToSilenceMs = @($conversationEvidence.bargeInToSilenceMs)
+        combinedWarmedVramMiB = @($conversationEvidence.warmedGpuMemoryMib)
         ttsRealTimeFactor = @($magpie.realTimeFactor)
     }
     soak = [ordered]@{
-        durationMinutes = 0.0
-        oomCount = 0
+        durationMinutes = [double]$soakEvidence.soak.durationMinutes
+        completedTurns = [int]$soakEvidence.soak.completedTurns
+        turnFailureCount = [int]$soakEvidence.soak.turnFailureCount
+        oomCount = [int]$soakEvidence.soak.oomCount
+        workerFailureCount = [int]$soakEvidence.soak.workerFailureCount
     }
 }
 

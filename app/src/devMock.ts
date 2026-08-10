@@ -32,13 +32,15 @@ function runtimeState(state: WorkerStatus["state"]): NativeRuntimeStatus {
     llm: worker("llm", state),
     speech: worker("speech", state),
     kokoro: worker("kokoro", state),
+    llmProfile: "qwen35Compatibility",
     ttsBackend: "magpie",
     vramAdmission: {
-      currentUsedMib: 2_866,
-      projectedWarmedMib: 22_450,
+      currentUsedMib: 3_143,
+      projectedWarmedMib: 12_000,
       limitMib: 23_040,
+      llmProfile: "qwen35Compatibility",
       backend: "magpie",
-      reason: "measured desktop usage leaves enough room for warmed Magpie TTS",
+      reason: "Qwen3.5 compatibility profile leaves room for warmed Magpie TTS",
     },
   };
 }
@@ -55,7 +57,7 @@ const devices = {
 };
 
 const models: ModelStatus[] = [
-  ["qwen", "Qwen3.6 27B Q4_K_M", "Apache License 2.0"],
+  ["qwen", "Qwen3.5 9B Q5_K_M compatibility profile", "Apache License 2.0"],
   ["nemotron-asr", "Nemotron 3.5 ASR", "OpenMDW 1.1"],
   ["magpie-tts", "Magpie TTS", "NVIDIA Open Model License"],
   ["nanocodec", "NVIDIA NanoCodec", "NVIDIA Open Model License"],

@@ -4,7 +4,7 @@ use crate::restart::RestartPolicy;
 use serde::Serialize;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -18,6 +18,7 @@ pub struct WorkerSpec {
     pub working_directory: PathBuf,
     pub environment: Vec<(OsString, OsString)>,
     pub endpoint_ip: IpAddr,
+    pub endpoint_port: u16,
 }
 
 impl WorkerSpec {
@@ -39,7 +40,13 @@ impl WorkerSpec {
                 self.working_directory.display()
             )));
         }
-        validate_loopback(self.endpoint_ip).map_err(SupervisorError::InvalidSpec)
+        validate_loopback(self.endpoint_ip).map_err(SupervisorError::InvalidSpec)?;
+        if self.endpoint_port == 0 {
+            return Err(SupervisorError::InvalidSpec(
+                "worker endpoint port cannot be zero".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -140,6 +147,7 @@ impl WorkerSupervisor {
         if self.child.is_some() {
             return Ok(());
         }
+        self.ensure_endpoint_available()?;
         let mut command = Command::new(&self.spec.executable);
         command
             .args(&self.spec.arguments)
@@ -183,6 +191,15 @@ impl WorkerSupervisor {
         self.diagnostics
             .push(DiagnosticStream::Supervisor, "worker process started");
         Ok(())
+    }
+
+    fn ensure_endpoint_available(&self) -> Result<(), SupervisorError> {
+        let address = SocketAddr::new(self.spec.endpoint_ip, self.spec.endpoint_port);
+        TcpListener::bind(address).map(drop).map_err(|error| {
+            SupervisorError::Platform(format!(
+                "worker endpoint {address} is unavailable before startup: {error}"
+            ))
+        })
     }
 
     pub fn poll(&mut self) -> Result<WorkerStatus, SupervisorError> {
@@ -452,6 +469,7 @@ mod windows_tests {
             working_directory,
             environment: Vec::new(),
             endpoint_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_port: available_port(),
         };
         let mut supervisor =
             WorkerSupervisor::new(spec, Box::new(AlwaysReady), RestartPolicy::default()).unwrap();
@@ -476,6 +494,85 @@ mod windows_tests {
         }
         assert!(!process_exists(descendant_pid));
         let _ = fs::remove_file(pid_file);
+    }
+
+    #[test]
+    fn crashed_worker_restarts_within_budget() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let marker = std::env::temp_dir().join(format!("fasttalk-worker-restart-{suffix}"));
+        let escaped_marker = marker.display().to_string().replace('\'', "''");
+        let script = format!(
+            "if (-not (Test-Path -LiteralPath '{escaped_marker}')) {{ New-Item -ItemType File -Path '{escaped_marker}' | Out-Null; exit 17 }}; Start-Sleep -Seconds 30"
+        );
+        let spec = WorkerSpec {
+            id: "restart-test".to_owned(),
+            executable: PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"),
+            arguments: ["-NoProfile", "-NonInteractive", "-Command"]
+                .into_iter()
+                .map(OsString::from)
+                .chain(std::iter::once(OsString::from(script)))
+                .collect(),
+            working_directory: std::env::current_dir().unwrap(),
+            environment: Vec::new(),
+            endpoint_ip: "127.0.0.1".parse().unwrap(),
+            endpoint_port: available_port(),
+        };
+        let policy = RestartPolicy {
+            initial_delay: Duration::from_millis(20),
+            maximum_delay: Duration::from_millis(20),
+            ..RestartPolicy::default()
+        };
+        let mut supervisor = WorkerSupervisor::new(spec, Box::new(AlwaysReady), policy).unwrap();
+        supervisor.start().unwrap();
+        let first_process = supervisor.status().process_id.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let restarted = loop {
+            let status = supervisor.poll().unwrap();
+            if status.state == WorkerState::Ready
+                && status.restart_attempts == 1
+                && status.process_id != Some(first_process)
+            {
+                break true;
+            }
+            if Instant::now() >= deadline || status.state == WorkerState::Failed {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        supervisor.stop().unwrap();
+        let _ = fs::remove_file(marker);
+        assert!(restarted, "worker did not recover from the injected crash");
+    }
+
+    #[test]
+    fn occupied_worker_port_is_rejected_before_spawn() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let spec = WorkerSpec {
+            id: "port-conflict-test".to_owned(),
+            executable: PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"),
+            arguments: Vec::new(),
+            working_directory: std::env::current_dir().unwrap(),
+            environment: Vec::new(),
+            endpoint_ip: address.ip(),
+            endpoint_port: address.port(),
+        };
+        let mut supervisor =
+            WorkerSupervisor::new(spec, Box::new(AlwaysReady), RestartPolicy::default()).unwrap();
+
+        let error = supervisor.start().unwrap_err().to_string();
+
+        assert!(error.contains("unavailable before startup"));
+        assert_eq!(supervisor.status().state, WorkerState::Stopped);
+        assert!(supervisor.status().process_id.is_none());
+    }
+
+    fn available_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
     }
 
     fn process_exists(process_id: u32) -> bool {

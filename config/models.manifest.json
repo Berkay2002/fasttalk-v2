@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "release": "2026.08.10.1",
+  "release": "2026.08.11.1",
   "publicKeyId": "fasttalk-models-2026-01",
   "models": [
     {
       "id": "qwen",
-      "displayName": "Qwen3.6 27B Q4_K_M",
-      "repository": "unsloth/Qwen3.6-27B-GGUF",
-      "revision": "82d411acf4a06cfb8d9b073a5211bf410bfc29bf",
-      "legacyRoot": ".cache/models/qwen3.6-27b",
+      "displayName": "Qwen3.5 9B Q5_K_M compatibility profile",
+      "repository": "unsloth/Qwen3.5-9B-GGUF",
+      "revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
+      "legacyRoot": ".cache/models/qwen3.5-9b",
       "artifacts": [
         {
-          "remotePath": "Qwen3.6-27B-Q4_K_M.gguf",
-          "path": "Qwen3.6-27B-Q4_K_M.gguf",
-          "sizeBytes": 16817244384,
-          "sha256": "5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0"
+          "remotePath": "Qwen3.5-9B-Q5_K_M.gguf",
+          "path": "Qwen3.5-9B-Q5_K_M.gguf",
+          "sizeBytes": 6577841376,
+          "sha256": "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
         }
       ],
       "license": {
         "id": "apache-2.0",
         "name": "Apache License 2.0",
-        "url": "https://huggingface.co/Qwen/Qwen3.6-27B/blob/main/LICENSE"
+        "url": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
       },
       "postInstall": []
     },

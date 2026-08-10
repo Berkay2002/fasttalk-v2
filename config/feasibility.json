@@ -61,6 +61,16 @@
       "sha256": "5ed60d0af4650a854b1755bd392f9aef4872643dc25a254bc68043fa638392a0"
     },
     {
+      "id": "qwen3.5-9b-q5-k-m",
+      "repository": "unsloth/Qwen3.5-9B-GGUF",
+      "revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
+      "environmentVariable": "FASTTALK_QWEN_COMPAT_MODEL",
+      "defaultPath": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+      "fileName": "Qwen3.5-9B-Q5_K_M.gguf",
+      "sizeBytes": 6577841376,
+      "sha256": "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
+    },
+    {
       "id": "nemotron-3.5-asr-streaming-0.6b-q8",
       "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
       "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",

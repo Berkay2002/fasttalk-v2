@@ -337,6 +337,9 @@ impl AudioEngine {
 
     pub fn cancel_playback(&self) {
         self.shared
+            .cancel_latency_micros
+            .store(0, Ordering::Release);
+        self.shared
             .cancel_requested_micros
             .store(self.shared.elapsed_micros(), Ordering::Release);
         self.shared.cancel_epoch.fetch_add(1, Ordering::AcqRel);
@@ -545,5 +548,16 @@ mod tests {
     fn shared_clock_reports_elapsed_time() {
         let shared = SharedState::new();
         assert!(shared.elapsed_micros() < 1_000_000);
+    }
+
+    #[test]
+    fn unavailable_selected_microphone_is_reported() {
+        let error = AudioEngine::start(AudioConfig {
+            input_device_id: Some("fasttalk-missing-input-device".to_owned()),
+            ..AudioConfig::default()
+        })
+        .err()
+        .expect("a nonexistent input device must fail");
+        assert!(matches!(error, AudioError::Device(_)));
     }
 }

@@ -33,3 +33,9 @@ use `-Unsigned -SkipNativeBuild`. Validate the resulting installer with
 
 Models are downloaded after installation or imported from a verified offline
 pack. They are not embedded in the installer.
+
+The current signed model release selects Qwen3.5 9B Q5_K_M. The planned
+Qwen3.6 27B profile missed the 20 token/s gate under representative desktop
+load, while this compatibility profile passed the throughput and latency gates.
+Regenerate a manifest with `New-ModelManifest.ps1`, then sign it with an
+explicit private seed using `Sign-ModelManifest.ps1`.

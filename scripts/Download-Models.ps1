@@ -7,7 +7,7 @@ param(
         "magpie-tts-tokenizer",
         "nanocodec-22khz-f16",
         "kokoro-82m",
-        "qwen3.6-27b-q4-k-m"
+        "qwen3.5-9b-q5-k-m"
     )
 )
 

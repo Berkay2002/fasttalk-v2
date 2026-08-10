@@ -187,7 +187,10 @@ pub struct Samples {
 #[serde(rename_all = "camelCase")]
 pub struct Soak {
     pub duration_minutes: f64,
+    pub completed_turns: usize,
+    pub turn_failure_count: u32,
     pub oom_count: u32,
+    pub worker_failure_count: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -623,6 +626,33 @@ pub fn evaluate(config: &Config, evidence: &BenchmarkEvidence) -> BenchmarkRepor
         format!("{} OOM events", evidence.soak.oom_count),
         "Reject this profile or reduce its memory use before continuing.",
     ));
+    checks.push(Check::new(
+        "soak.completed-turns",
+        "benchmark",
+        evidence.soak.completed_turns > 0,
+        ">= 1 completed full conversation turn",
+        format!("{} completed turns", evidence.soak.completed_turns),
+        "Reject an idle or fully failing soak and repeat it with complete ASR, LLM, and TTS turns.",
+    ));
+    checks.push(Check::new(
+        "soak.worker-failures",
+        "benchmark",
+        evidence.soak.worker_failure_count == 0,
+        "0 failed native worker polls",
+        format!(
+            "{} failed native worker polls",
+            evidence.soak.worker_failure_count
+        ),
+        "Diagnose the failed worker before accepting the soak.",
+    ));
+    checks.push(Check::new(
+        "soak.turn-failures",
+        "benchmark",
+        evidence.soak.turn_failure_count == 0,
+        "0 failed or timed-out conversation turns",
+        format!("{} failed turns", evidence.soak.turn_failure_count),
+        "Diagnose the failed conversation path before accepting the soak.",
+    ));
 
     if let Some(value) = finite_max(&evidence.samples.tts_real_time_factor) {
         observations.insert("ttsRealTimeFactorMax".to_owned(), value);
@@ -816,7 +846,10 @@ mod tests {
             },
             soak: Soak {
                 duration_minutes: 30.0,
+                completed_turns: 1,
+                turn_failure_count: 0,
                 oom_count: 0,
+                worker_failure_count: 0,
             },
         }
     }
@@ -866,6 +899,32 @@ mod tests {
                 .unwrap()
                 .status,
             CheckStatus::Fail
+        );
+    }
+
+    #[test]
+    fn idle_or_unhealthy_soak_fails_the_profile() {
+        let config = test_config();
+        let mut evidence = passing_evidence();
+        evidence.soak.completed_turns = 0;
+        evidence.soak.turn_failure_count = 1;
+        evidence.soak.worker_failure_count = 1;
+
+        let report = evaluate(&config, &evidence);
+
+        assert!(!report.pass);
+        assert_eq!(
+            report
+                .checks
+                .iter()
+                .filter(|check| {
+                    matches!(
+                        check.id.as_str(),
+                        "soak.completed-turns" | "soak.turn-failures" | "soak.worker-failures"
+                    ) && check.status == CheckStatus::Fail
+                })
+                .count(),
+            3
         );
     }
 

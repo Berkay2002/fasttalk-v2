@@ -46,7 +46,7 @@ impl LlmClient {
             .client
             .post(&self.endpoint)
             .json(&serde_json::json!({
-                "model": "qwen3.6-27b",
+                "model": "fasttalk-local",
                 "messages": messages,
                 "max_tokens": 512,
                 "temperature": 0.6,

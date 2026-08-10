@@ -59,7 +59,7 @@ function Get-TreeArtifacts([string]$Root) {
     })
 }
 
-$qwen = Get-Model "qwen3.6-27b-q4-k-m"
+$qwen = Get-Model "qwen3.5-9b-q5-k-m"
 $asr = Get-Model "nemotron-3.5-asr-streaming-0.6b-q8"
 $magpie = Get-Model "magpie-tts-v2602-f16"
 $magpieTokenizer = Get-Model "magpie-tts-tokenizer"
@@ -67,20 +67,20 @@ $codec = Get-Model "nanocodec-22khz-f16"
 
 $manifest = [ordered]@{
     schemaVersion = 1
-    release = "2026.08.10.1"
+    release = "2026.08.11.1"
     publicKeyId = "fasttalk-models-2026-01"
     models = @(
         [ordered]@{
             id = "qwen"
-            displayName = "Qwen3.6 27B Q4_K_M"
+            displayName = "Qwen3.5 9B Q5_K_M compatibility profile"
             repository = $qwen.repository
             revision = $qwen.revision
-            legacyRoot = ".cache/models/qwen3.6-27b"
-            artifacts = @(Get-Artifact ".cache/models/qwen3.6-27b" $qwen)
+            legacyRoot = ".cache/models/qwen3.5-9b"
+            artifacts = @(Get-Artifact ".cache/models/qwen3.5-9b" $qwen)
             license = [ordered]@{
                 id = "apache-2.0"
                 name = "Apache License 2.0"
-                url = "https://huggingface.co/Qwen/Qwen3.6-27B/blob/main/LICENSE"
+                url = "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
             }
             postInstall = @()
         },

@@ -1,4 +1,4 @@
-mod native;
+pub mod native;
 mod orchestrator;
 
 use fasttalk_audio::{AudioConfig, AudioDevices, AudioEngine, AudioStatus};
@@ -269,7 +269,7 @@ fn native_model_paths(models: &ModelManager) -> Result<NativeModelPaths, Command
     let nanocodec = root("nanocodec")?;
     let kokoro = root("kokoro")?;
     Ok(NativeModelPaths {
-        qwen: qwen.join("Qwen3.6-27B-Q4_K_M.gguf"),
+        qwen: qwen.join("Qwen3.5-9B-Q5_K_M.gguf"),
         asr: asr.join("nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
         magpie: magpie.join("magpie_tts_multilingual_357m.v2602.f16.gguf"),
         nanocodec: nanocodec.join("nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),

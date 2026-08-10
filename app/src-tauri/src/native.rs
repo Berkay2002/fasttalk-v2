@@ -12,7 +12,14 @@ const LLM_PORT: u16 = 18_080;
 const SPEECH_PORT: u16 = 18_081;
 const KOKORO_PORT: u16 = 18_082;
 const MAX_WARMED_VRAM_MIB: u64 = 23_040;
-const MEASURED_COMBINED_WORKER_VRAM_MIB: u64 = 19_584;
+const MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB: u64 = 8_857;
+const MEASURED_COMPAT_ASR_VRAM_MIB: u64 = 7_902;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PreferredLlmProfile {
+    Qwen35Compatibility,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +34,7 @@ pub struct VramAdmission {
     pub current_used_mib: Option<u64>,
     pub projected_warmed_mib: Option<u64>,
     pub limit_mib: u64,
+    pub llm_profile: PreferredLlmProfile,
     pub backend: PreferredTtsBackend,
     pub reason: String,
 }
@@ -37,6 +45,7 @@ pub struct NativeRuntimeStatus {
     pub llm: Option<WorkerStatus>,
     pub speech: Option<WorkerStatus>,
     pub kokoro: Option<WorkerStatus>,
+    pub llm_profile: PreferredLlmProfile,
     pub tts_backend: PreferredTtsBackend,
     pub vram_admission: VramAdmission,
 }
@@ -61,7 +70,6 @@ pub struct NativeModelPaths {
 }
 
 impl NativeRuntime {
-    #[cfg(test)]
     pub fn for_development_checkout() -> Self {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         Self::for_root(root)
@@ -69,7 +77,7 @@ impl NativeRuntime {
 
     pub fn for_root(root: PathBuf) -> Self {
         let models = NativeModelPaths {
-            qwen: root.join(".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf"),
+            qwen: root.join(".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf"),
             asr: root.join(".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
             magpie: root
                 .join(".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
@@ -136,6 +144,7 @@ impl NativeRuntime {
                 .as_mut()
                 .map(WorkerSupervisor::poll)
                 .transpose()?,
+            llm_profile: self.vram_admission.llm_profile,
             tts_backend: self.vram_admission.backend,
             vram_admission: self.vram_admission.clone(),
         })
@@ -155,6 +164,7 @@ impl NativeRuntime {
             llm: self.llm.as_ref().map(WorkerSupervisor::status),
             speech: self.speech.as_ref().map(WorkerSupervisor::status),
             kokoro: self.kokoro.as_ref().map(WorkerSupervisor::status),
+            llm_profile: self.vram_admission.llm_profile,
             tts_backend: self.vram_admission.backend,
             vram_admission: self.vram_admission.clone(),
         };
@@ -172,6 +182,8 @@ impl NativeRuntime {
             path_text(model)?,
             "--ctx-size",
             "16384",
+            "--parallel",
+            "4",
             "--gpu-layers",
             "all",
             "--flash-attn",
@@ -196,6 +208,7 @@ impl NativeRuntime {
                 arguments,
                 environment: worker_environment(&self.root),
                 endpoint_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                endpoint_port: LLM_PORT,
             },
             Box::new(
                 LoopbackHealthProbe::new(
@@ -246,6 +259,7 @@ impl NativeRuntime {
                 arguments,
                 environment: worker_environment(&self.root),
                 endpoint_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                endpoint_port: SPEECH_PORT,
             },
             Box::new(
                 LoopbackHealthProbe::new(
@@ -283,6 +297,7 @@ impl NativeRuntime {
                 arguments,
                 environment: Vec::new(),
                 endpoint_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                endpoint_port: KOKORO_PORT,
             },
             Box::new(
                 LoopbackHealthProbe::new(
@@ -307,20 +322,23 @@ fn admission_for(current_used_mib: Option<u64>) -> VramAdmission {
             "NVIDIA memory usage could not be measured, so GPU TTS was disabled",
         );
     };
-    let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMBINED_WORKER_VRAM_MIB);
+    let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB);
     if projected_warmed_mib <= MAX_WARMED_VRAM_MIB {
         VramAdmission {
             current_used_mib: Some(current_used_mib),
             projected_warmed_mib: Some(projected_warmed_mib),
             limit_mib: MAX_WARMED_VRAM_MIB,
+            llm_profile: PreferredLlmProfile::Qwen35Compatibility,
             backend: PreferredTtsBackend::Magpie,
-            reason: "measured desktop usage leaves enough room for warmed Magpie TTS".to_owned(),
+            reason: "Qwen3.6 missed the throughput gate under desktop load; the measured Qwen3.5 compatibility profile leaves room for warmed Magpie TTS".to_owned(),
         }
     } else {
+        let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMPAT_ASR_VRAM_MIB);
         VramAdmission {
             current_used_mib: Some(current_used_mib),
             projected_warmed_mib: Some(projected_warmed_mib),
             limit_mib: MAX_WARMED_VRAM_MIB,
+            llm_profile: PreferredLlmProfile::Qwen35Compatibility,
             backend: PreferredTtsBackend::Kokoro,
             reason: "projected warmed usage exceeds the GPU memory policy; using CPU TTS"
                 .to_owned(),
@@ -333,6 +351,7 @@ fn fallback_admission(reason: &str) -> VramAdmission {
         current_used_mib: None,
         projected_warmed_mib: None,
         limit_mib: MAX_WARMED_VRAM_MIB,
+        llm_profile: PreferredLlmProfile::Qwen35Compatibility,
         backend: PreferredTtsBackend::Kokoro,
         reason: reason.to_owned(),
     }
@@ -400,15 +419,23 @@ mod tests {
     #[test]
     fn vram_policy_uses_cpu_tts_above_the_measured_limit() {
         let exact = admission_for(Some(
-            MAX_WARMED_VRAM_MIB - MEASURED_COMBINED_WORKER_VRAM_MIB,
+            MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB,
         ));
         assert_eq!(exact.backend, PreferredTtsBackend::Magpie);
         assert_eq!(exact.projected_warmed_mib, Some(MAX_WARMED_VRAM_MIB));
 
         let over = admission_for(Some(
-            MAX_WARMED_VRAM_MIB - MEASURED_COMBINED_WORKER_VRAM_MIB + 1,
+            MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB + 1,
         ));
         assert_eq!(over.backend, PreferredTtsBackend::Kokoro);
+        assert_eq!(
+            over.projected_warmed_mib,
+            Some(
+                MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB
+                    + 1
+                    + MEASURED_COMPAT_ASR_VRAM_MIB
+            )
+        );
         assert_eq!(admission_for(None).backend, PreferredTtsBackend::Kokoro);
     }
 

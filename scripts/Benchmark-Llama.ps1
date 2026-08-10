@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$Model = ".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf",
+    [string]$Profile = "qwen3.6-27b-q4-k-m-16k-non-thinking",
     [string]$Output = "artifacts/feasibility/llama-benchmark.json",
     [int]$Port = 18080,
     [int]$WarmSamples = 20,
@@ -21,6 +22,7 @@ $env:Path = "$(Join-Path $workspace 'runtime/cuda-13.3');$env:Path"
 $arguments = @(
     "--model", $modelPath,
     "--ctx-size", "16384",
+    "--parallel", "4",
     "--gpu-layers", "all",
     "--flash-attn", "on",
     "--reasoning", "off",
@@ -54,7 +56,7 @@ function Wait-Ready {
 
 function Measure-FirstToken {
     $payload = @{
-        model = "qwen3.6-27b"
+        model = "fasttalk-local"
         messages = @(@{ role = "user"; content = "Reply with exactly: ready" })
         max_tokens = 8
         temperature = 0
@@ -100,7 +102,7 @@ try {
     Wait-Ready
 
     $warmup = @{
-        model = "qwen3.6-27b"
+        model = "fasttalk-local"
         messages = @(@{ role = "user"; content = "Reply with exactly: ready" })
         max_tokens = 8
         temperature = 0
@@ -114,7 +116,7 @@ try {
 
     $throughput = for ($sample = 0; $sample -lt $ThroughputSamples; $sample++) {
         $payload = @{
-            model = "qwen3.6-27b"
+            model = "fasttalk-local"
             messages = @(@{
                 role = "user"
                 content = "Write one compact paragraph about local speech software. Use 100 words."
@@ -131,7 +133,7 @@ try {
     $memoryUsed = [double](nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | Select-Object -First 1)
     $report = [ordered]@{
         schemaVersion = 1
-        profile = "qwen3.6-27b-q4-k-m-16k-non-thinking"
+        profile = $Profile
         warmLlmFirstTokenMs = @($ttft)
         generationTokensPerSecond = @($throughput)
         warmedGpuMemoryMiB = $memoryUsed

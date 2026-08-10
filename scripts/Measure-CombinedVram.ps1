@@ -1,14 +1,20 @@
 [CmdletBinding()]
 param(
+    [string]$LlamaModel = ".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf",
+    [string]$Profile = "qwen3.6-27b-q4-k-m-16k-non-thinking-with-speech",
     [string]$Output = "artifacts/feasibility/combined-vram.json",
     [int]$LlamaPort = 18080,
-    [int]$SpeechPort = 18081
+    [int]$SpeechPort = 18081,
+    [switch]$AsrOnly
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = Split-Path -Parent $PSScriptRoot
 $artifactDir = Join-Path $workspace "artifacts/feasibility"
 $outputPath = Join-Path $workspace $Output
+$outputDir = Split-Path -Parent $outputPath
+New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+$llamaModelPath = (Resolve-Path (Join-Path $workspace $LlamaModel)).Path
 $env:Path = "$(Join-Path $workspace 'runtime/cuda-13.3');$env:Path"
 
 function Get-GpuMemoryMiB {
@@ -37,8 +43,9 @@ $llamaLog = Join-Path $artifactDir "combined-llama.stderr.log"
 $speechLog = Join-Path $artifactDir "combined-speech.stderr.log"
 $llama = Start-Process -FilePath (Join-Path $workspace "runtime/llm/llama-server.exe") `
     -ArgumentList @(
-        "--model", (Join-Path $workspace ".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf"),
-        "--ctx-size", "16384", "--gpu-layers", "all", "--flash-attn", "on",
+        "--model", $llamaModelPath,
+        "--ctx-size", "16384", "--parallel", "4",
+        "--gpu-layers", "all", "--flash-attn", "on",
         "--reasoning", "off", "--host", "127.0.0.1", "--port", $LlamaPort.ToString(),
         "--no-webui"
     ) -PassThru -WindowStyle Hidden -RedirectStandardError $llamaLog `
@@ -56,21 +63,29 @@ try {
     Invoke-RestMethod "http://127.0.0.1:$LlamaPort/v1/chat/completions" `
         -Method Post -ContentType "application/json" -Body $warmup -TimeoutSec 120 | Out-Null
 
-    $speech = Start-Process -FilePath (Join-Path $workspace "runtime/asr/nemo-speech.exe") `
-        -ArgumentList @(
-            "serve",
-            "--asr-model", (Join-Path $workspace ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+    $speechArguments = @(
+        "serve",
+        "--asr-model", (Join-Path $workspace ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+        "--host", "127.0.0.1", "--port", $SpeechPort.ToString(), "--no-ui"
+    )
+    if (-not $AsrOnly) {
+        $speechArguments += @(
             "--tts-model", (Join-Path $workspace ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
             "--codec-model", (Join-Path $workspace ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
-            "--tokenizer-dir", (Join-Path $workspace ".cache/models/magpie-tts/extracted"),
-            "--host", "127.0.0.1", "--port", $SpeechPort.ToString(), "--no-ui"
-        ) -PassThru -WindowStyle Hidden -RedirectStandardError $speechLog `
+            "--tokenizer-dir", (Join-Path $workspace ".cache/models/magpie-tts/extracted")
+        )
+    }
+    $speech = Start-Process -FilePath (Join-Path $workspace "runtime/asr/nemo-speech.exe") `
+        -ArgumentList $speechArguments -PassThru -WindowStyle Hidden -RedirectStandardError $speechLog `
         -RedirectStandardOutput (Join-Path $artifactDir "combined-speech.stdout.log")
     $ready = Wait-Endpoint "http://127.0.0.1:$SpeechPort/ready" $speech $speechLog
     $warmed = Get-GpuMemoryMiB
 
     $report = [ordered]@{
         schemaVersion = 1
+        profile = $Profile
+        llamaModel = [IO.Path]::GetRelativePath($workspace, $llamaModelPath).Replace('\', '/')
+        speechProfile = if ($AsrOnly) { "asr-only" } else { "asr-and-magpie" }
         baselineGpuMemoryMiB = $baseline
         warmedGpuMemoryMiB = $warmed
         combinedWorkerGpuMemoryMiB = $warmed - $baseline
