@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "llm": "qwen3.6-27b-q4-k-m",
+    "asr": "nemotron-3.5-asr-streaming-0.6b-q8",
+    "tts": "magpie-tts-v2602-f16"
+  },
+  "environment": {
+    "desktopApplicationsOpen": true,
+    "networkDisabled": false,
+    "notes": "Replace every sample with measurements from one warmed benchmark run."
+  },
+  "samples": {
+    "endOfSpeechToFirstAudioMs": [],
+    "warmLlmFirstTokenMs": [],
+    "generationTokensPerSecond": [],
+    "asrPartialUpdateMs": [],
+    "bargeInToSilenceMs": [],
+    "combinedWarmedVramMiB": [],
+    "ttsRealTimeFactor": []
+  },
+  "soak": {
+    "durationMinutes": 0.0,
+    "oomCount": 0
+  }
+}
+

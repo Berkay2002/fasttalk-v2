@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "sourceArtifact": {
+    "path": "fasttalk-v2-architecture-plan.html",
+    "sha256": "89db5f0734779807e0e84993844bc29ec3ce12042237a191a07b921f244a1f5e"
+  },
+  "target": {
+    "minimumWindowsBuild": 22000,
+    "gpuName": "NVIDIA GeForce RTX 3090",
+    "minimumGpuMemoryMiB": 24576,
+    "computeCapability": "8.6",
+    "cudaToolkitVersion": "13.3",
+    "cmakeVersionPrefix": "3.30.",
+    "ninjaVersionPrefix": "1.13.",
+    "rustTarget": "x86_64-pc-windows-msvc"
+  },
+  "sources": [
+    {
+      "id": "nemo-speech.cpp",
+      "remote": "https://github.com/NVIDIA/NeMo-Speech.cpp.git",
+      "revision": "967c61bc6b138e4730fd0c6414e15801246bd238"
+    },
+    {
+      "id": "llama.cpp",
+      "remote": "https://github.com/ggml-org/llama.cpp.git",
+      "revision": "dd1ea524333b1e697489067d7a4c39c60d32beee"
+    },
+    {
+      "id": "vcpkg",
+      "remote": "https://github.com/microsoft/vcpkg.git",
+      "revision": "ea1a7396b05637a53bf23c078647ecc0edee4b80"
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "nemo-speech",
+      "environmentVariable": "FASTTALK_NEMO_SPEECH_EXE",
+      "defaultPath": "runtime/asr/nemo-speech.exe",
+      "fileName": "nemo-speech.exe"
+    },
+    {
+      "id": "llama-server",
+      "environmentVariable": "FASTTALK_LLAMA_SERVER_EXE",
+      "defaultPath": "runtime/llm/llama-server.exe",
+      "fileName": "llama-server.exe"
+    }
+  ],
+  "models": [
+    {
+      "id": "qwen3.6-27b-q4-k-m",
+      "repository": "unsloth/Qwen3.6-27B-GGUF",
+      "revision": "82d411acf4a06cfb8d9b073a5211bf410bfc29bf",
+      "environmentVariable": "FASTTALK_QWEN_MODEL",
+      "fileName": "Qwen3.6-27B-Q4_K_M.gguf"
+    },
+    {
+      "id": "nemotron-3.5-asr-streaming-0.6b-q8",
+      "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "environmentVariable": "FASTTALK_ASR_MODEL",
+      "fileName": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+    },
+    {
+      "id": "magpie-tts-v2602-f16",
+      "repository": "nvidia/magpie_tts_multilingual_357m",
+      "revision": "452ef560f972c38d5fc16476259aac9456453547",
+      "environmentVariable": "FASTTALK_MAGPIE_MODEL",
+      "fileName": "magpie_tts_multilingual_357m.v2602.f16.gguf"
+    },
+    {
+      "id": "kokoro-82m",
+      "repository": "hexgrad/Kokoro-82M",
+      "revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+      "environmentVariable": "FASTTALK_KOKORO_MODEL",
+      "fileName": null
+    }
+  ],
+  "evidence": {
+    "minimumWarmTurnSamples": 20,
+    "minimumGenerationSamples": 5,
+    "minimumAsrPartialSamples": 20,
+    "minimumBargeInSamples": 20
+  },
+  "gates": {
+    "endOfSpeechToFirstAudioP50Ms": 1200.0,
+    "endOfSpeechToFirstAudioP95Ms": 1800.0,
+    "warmLlmFirstTokenP95Ms": 900.0,
+    "minimumGenerationTokensPerSecond": 20.0,
+    "maximumAsrPartialUpdateMs": 250.0,
+    "maximumBargeInToSilenceMs": 150.0,
+    "maximumCombinedWarmedVramMiB": 23040.0,
+    "minimumSoakMinutes": 30.0,
+    "maximumSoakOomCount": 0
+  }
+}
