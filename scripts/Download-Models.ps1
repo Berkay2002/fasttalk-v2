@@ -33,9 +33,19 @@ foreach ($id in $ModelId) {
     New-Item -ItemType Directory -Force -Path $localDir | Out-Null
 
     $remoteFile = if ($model.remoteFile) { $model.remoteFile } else { $model.fileName }
-    & $hf.Source download $model.repository $remoteFile `
-        --revision $model.revision `
-        --local-dir $localDir
+    if ($model.bundleIncludes) {
+        $downloadArguments = @(
+            "download", $model.repository,
+            "--revision", $model.revision,
+            "--local-dir", $localDir,
+            "--include"
+        ) + @($model.bundleIncludes)
+        & $hf.Source @downloadArguments
+    } else {
+        & $hf.Source download $model.repository $remoteFile `
+            --revision $model.revision `
+            --local-dir $localDir
+    }
     if ($LASTEXITCODE -ne 0) { throw "Download failed for $id ($LASTEXITCODE)" }
     $downloaded = Join-Path $localDir $remoteFile
     if ($downloaded -ne $destination -and (Test-Path -LiteralPath $downloaded)) {
@@ -53,9 +63,14 @@ foreach ($id in $ModelId) {
     }
     if ($model.extractTo) {
         $extractTo = Join-Path $workspace $model.extractTo
+        if (Test-Path -LiteralPath $extractTo) {
+            Remove-Item -LiteralPath $extractTo -Recurse -Force
+        }
         New-Item -ItemType Directory -Force -Path $extractTo | Out-Null
         tar -xf $destination -C $extractTo
         if ($LASTEXITCODE -ne 0) { throw "Extraction failed for $id ($LASTEXITCODE)" }
+        Set-Content -LiteralPath (Join-Path $extractTo ".fasttalk-verified") `
+            -Value "verified" -Encoding utf8
     }
     Write-Host "$id verified: $destination"
 }

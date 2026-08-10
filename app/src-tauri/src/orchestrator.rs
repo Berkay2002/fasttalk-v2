@@ -1,3 +1,4 @@
+use crate::native::PreferredTtsBackend;
 use fasttalk_audio::AudioEngine;
 use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, Message, MessageRole, SessionHistory,
@@ -38,7 +39,12 @@ impl ConversationController {
     }
 }
 
-pub fn start(app: AppHandle, engine: SharedEngine, audio: SharedAudio) -> ConversationController {
+pub fn start(
+    app: AppHandle,
+    engine: SharedEngine,
+    audio: SharedAudio,
+    tts_backend: PreferredTtsBackend,
+) -> ConversationController {
     let cancellation = CancellationToken::new();
     let task_cancellation = cancellation.clone();
     let (control, control_receiver) = mpsc::unbounded_channel();
@@ -49,6 +55,7 @@ pub fn start(app: AppHandle, engine: SharedEngine, audio: SharedAudio) -> Conver
             audio,
             task_cancellation,
             control_receiver,
+            tts_backend,
         )
         .await
             && !matches!(error, PipelineError::Cancelled)
@@ -76,6 +83,7 @@ async fn run(
     audio: SharedAudio,
     cancellation: CancellationToken,
     mut control: mpsc::UnboundedReceiver<Control>,
+    tts_backend: PreferredTtsBackend,
 ) -> Result<(), PipelineError> {
     let asr = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime")?;
     let (mut asr_sender, mut asr_receiver) = asr.connect().await?;
@@ -145,6 +153,7 @@ async fn run(
                                 engine.clone(),
                                 audio.clone(),
                                 history.clone(),
+                                tts_backend,
                             ));
                         }
                     }
@@ -192,11 +201,20 @@ fn spawn_turn(
     engine: SharedEngine,
     audio: SharedAudio,
     history: Arc<Mutex<SessionHistory>>,
+    tts_backend: PreferredTtsBackend,
 ) -> (CancellationToken, JoinHandle<()>) {
     let cancellation = CancellationToken::new();
     let task_cancellation = cancellation.clone();
     let task = tauri::async_runtime::spawn(async move {
-        if let Err(error) = run_turn(&app, &engine, &audio, &history, task_cancellation).await
+        if let Err(error) = run_turn(
+            &app,
+            &engine,
+            &audio,
+            &history,
+            task_cancellation,
+            tts_backend,
+        )
+        .await
             && !matches!(error, PipelineError::Cancelled)
         {
             log::error!("conversation turn failed: {error}");
@@ -218,6 +236,7 @@ async fn run_turn(
     audio: &SharedAudio,
     history: &Arc<Mutex<SessionHistory>>,
     cancellation: CancellationToken,
+    tts_backend: PreferredTtsBackend,
 ) -> Result<(), PipelineError> {
     let messages = chat_messages(history)?;
     let llm = LlmClient::new("http://127.0.0.1:18080")?;
@@ -244,7 +263,7 @@ async fn run_turn(
                         text: clause.clone(),
                     },
                 )?;
-                synthesize_clause(&clause, audio, cancellation.clone()).await?;
+                synthesize_clause(&clause, audio, cancellation.clone(), tts_backend).await?;
             }
             LlmEvent::Completed(completed) => {
                 answer = Some(completed);
@@ -277,7 +296,13 @@ async fn synthesize_clause(
     clause: &str,
     audio: &SharedAudio,
     cancellation: CancellationToken,
+    backend: PreferredTtsBackend,
 ) -> Result<(), PipelineError> {
+    if backend == PreferredTtsBackend::Kokoro {
+        return synthesize_with_backend(TtsBackend::Kokoro, clause, audio, cancellation)
+            .await
+            .map_err(|error| error.source);
+    }
     match synthesize_with_backend(TtsBackend::Magpie, clause, audio, cancellation.clone()).await {
         Ok(()) => Ok(()),
         Err(error) if !error.pcm_emitted && !matches!(&error.source, PipelineError::Cancelled) => {

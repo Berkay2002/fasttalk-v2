@@ -5,6 +5,7 @@ import {
   initialSnapshot,
   type AudioStatus,
   type EngineSnapshot,
+  type ModelStatus,
   type NativeRuntimeStatus,
   type WorkerStatus,
 } from "./contracts";
@@ -31,6 +32,14 @@ function runtimeState(state: WorkerStatus["state"]): NativeRuntimeStatus {
     llm: worker("llm", state),
     speech: worker("speech", state),
     kokoro: worker("kokoro", state),
+    ttsBackend: "magpie",
+    vramAdmission: {
+      currentUsedMib: 2_866,
+      projectedWarmedMib: 22_450,
+      limitMib: 23_040,
+      backend: "magpie",
+      reason: "measured desktop usage leaves enough room for warmed Magpie TTS",
+    },
   };
 }
 
@@ -44,6 +53,24 @@ const devices = {
     { id: "wasapi:headset", name: "USB headset", isDefault: false, isCompatible: true },
   ],
 };
+
+const models: ModelStatus[] = [
+  ["qwen", "Qwen3.6 27B Q4_K_M", "Apache License 2.0"],
+  ["nemotron-asr", "Nemotron 3.5 ASR", "OpenMDW 1.1"],
+  ["magpie-tts", "Magpie TTS", "NVIDIA Open Model License"],
+  ["nanocodec", "NVIDIA NanoCodec", "NVIDIA Open Model License"],
+  ["kokoro", "Kokoro 82M INT8", "Apache License 2.0"],
+].map(([id, displayName, licenseName]) => ({
+  id,
+  displayName,
+  state: "ready",
+  source: "managed",
+  verifiedBytes: 1,
+  totalBytes: 1,
+  licenseName,
+  licenseUrl: "https://huggingface.co/",
+  error: null,
+}));
 
 export function installDevMock() {
   let snapshot: EngineSnapshot = structuredClone(initialSnapshot);
@@ -64,20 +91,20 @@ export function installDevMock() {
     cancelTurnTimers();
     timers.push(
       window.setTimeout(() => {
-        revise({ partialTranscript: "How does FastTalk keep the conversation private?" });
+        revise({ partialTranscript: "Give me a concise summary of the implementation status." });
       }, 450),
       window.setTimeout(() => {
         revise({
           state: "thinking",
           partialTranscript: "",
-          committedTranscript: "How does FastTalk keep the conversation private?",
+          committedTranscript: "Give me a concise summary of the implementation status.",
         });
       }, 1_150),
       window.setTimeout(() => {
         revise({
           state: "speaking",
-          assistantTranscript: "Audio, transcription, and generation stay on this computer.",
-          pendingClause: "Audio, transcription, and generation stay on this computer.",
+          assistantTranscript: "The native speech pipeline, desktop controls, and verified model setup are working.",
+          pendingClause: "The native speech pipeline, desktop controls, and verified model setup are working.",
         });
       }, 1_750),
       window.setTimeout(() => {
@@ -147,6 +174,12 @@ export function installDevMock() {
         case "runtime_stop":
           runtime = runtimeState("stopped");
           return structuredClone(runtime);
+        case "model_status":
+        case "model_install_all":
+        case "model_import_pack":
+          return structuredClone(models);
+        case "model_export_pack":
+          return null;
         case "conversation_start":
           if (!audio || runtime.llm?.state !== "ready") {
             throw { code: "workersNotReady", message: "Local services are not ready." };

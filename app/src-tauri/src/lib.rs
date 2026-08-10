@@ -5,12 +5,13 @@ use fasttalk_audio::{AudioConfig, AudioDevices, AudioEngine, AudioStatus};
 use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, EngineSnapshot,
 };
+use fasttalk_model_manager::{InstallProgress, ModelManager, ModelStatus, SignedManifest};
 use fasttalk_runtime::WorkerState;
-use native::{NativeRuntime, NativeRuntimeStatus};
+use native::{NativeModelPaths, NativeRuntime, NativeRuntimeStatus};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 struct AppState {
@@ -18,16 +19,26 @@ struct AppState {
     audio: SharedAudio,
     runtime: Mutex<NativeRuntime>,
     conversation: Mutex<Option<ConversationController>>,
+    models: Arc<ModelManager>,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
+impl AppState {
+    fn new(model_store: std::path::PathBuf) -> Result<Self, fasttalk_model_manager::ManifestError> {
+        let manifest = SignedManifest::verify(
+            include_bytes!("../../../config/models.manifest.json").to_vec(),
+            include_str!("../../../config/models.manifest.sig"),
+            include_str!("../../../config/models.manifest.pub"),
+        )?;
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let models = ModelManager::new(workspace, model_store, manifest)
+            .expect("the embedded model-manager HTTP configuration is valid");
+        Ok(Self {
             engine: Arc::new(Mutex::new(ConversationEngine::default())),
             audio: Arc::new(Mutex::new(None)),
             runtime: Mutex::new(NativeRuntime::for_development_checkout()),
             conversation: Mutex::new(None),
-        }
+            models: Arc::new(models),
+        })
     }
 }
 
@@ -194,6 +205,7 @@ fn conversation_start(
         app,
         state.engine.clone(),
         state.audio.clone(),
+        workers.tts_backend,
     ));
     Ok(snapshot)
 }
@@ -230,11 +242,37 @@ async fn conversation_stop(state: State<'_, AppState>) -> Result<EngineSnapshot,
 
 #[tauri::command]
 fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
-    let status = lock(&state.runtime, "runtimeUnavailable")?
-        .start()
-        .map_err(runtime_error)?;
+    let models = native_model_paths(&state.models)?;
+    let mut runtime = lock(&state.runtime, "runtimeUnavailable")?;
+    runtime.configure_models(models).map_err(runtime_error)?;
+    let status = runtime.start().map_err(runtime_error)?;
     log::info!("native workers started");
     Ok(status)
+}
+
+fn native_model_paths(models: &ModelManager) -> Result<NativeModelPaths, CommandError> {
+    let root = |id: &str| {
+        models
+            .resolved_root(id)
+            .map_err(model_error)?
+            .ok_or_else(|| CommandError {
+                code: "modelMissing",
+                message: format!("required model group is not ready: {id}"),
+            })
+    };
+    let qwen = root("qwen")?;
+    let asr = root("nemotron-asr")?;
+    let magpie = root("magpie-tts")?;
+    let nanocodec = root("nanocodec")?;
+    let kokoro = root("kokoro")?;
+    Ok(NativeModelPaths {
+        qwen: qwen.join("Qwen3.6-27B-Q4_K_M.gguf"),
+        asr: asr.join("nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+        magpie: magpie.join("magpie_tts_multilingual_357m.v2602.f16.gguf"),
+        nanocodec: nanocodec.join("nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
+        magpie_tokenizer: magpie.join("extracted"),
+        kokoro,
+    })
 }
 
 #[tauri::command]
@@ -251,6 +289,67 @@ fn runtime_stop(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, Comma
         .map_err(runtime_error)?;
     log::info!("native workers stopped");
     Ok(status)
+}
+
+#[tauri::command]
+async fn model_status(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, CommandError> {
+    let models = state.models.clone();
+    tokio::task::spawn_blocking(move || models.statuses())
+        .await
+        .map_err(|error| CommandError {
+            code: "modelTaskFailed",
+            message: error.to_string(),
+        })
+}
+
+#[tauri::command]
+async fn model_install_all(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelStatus>, CommandError> {
+    let models = state.models.clone();
+    let token = std::env::var("HF_TOKEN").ok();
+    let progress_app = app.clone();
+    models
+        .install_all(token.as_deref(), &move |progress: InstallProgress| {
+            let _ = progress_app.emit("model-progress", progress);
+        })
+        .await
+        .map_err(model_error)
+}
+
+#[tauri::command]
+async fn model_import_pack(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ModelStatus>, CommandError> {
+    let models = state.models.clone();
+    tokio::task::spawn_blocking(move || models.import_pack(std::path::Path::new(&path)))
+        .await
+        .map_err(|error| CommandError {
+            code: "modelTaskFailed",
+            message: error.to_string(),
+        })?
+        .map_err(model_error)
+}
+
+#[tauri::command]
+async fn model_export_pack(path: String, state: State<'_, AppState>) -> Result<(), CommandError> {
+    let models = state.models.clone();
+    tokio::task::spawn_blocking(move || models.export_pack(std::path::Path::new(&path)))
+        .await
+        .map_err(|error| CommandError {
+            code: "modelTaskFailed",
+            message: error.to_string(),
+        })?
+        .map_err(model_error)
+}
+
+fn model_error(error: fasttalk_model_manager::ModelManagerError) -> CommandError {
+    CommandError {
+        code: "modelManagerFailed",
+        message: error.to_string(),
+    }
 }
 
 fn runtime_error(error: fasttalk_runtime::SupervisorError) -> CommandError {
@@ -286,6 +385,7 @@ fn lock<'a, T>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -297,7 +397,11 @@ pub fn run() {
                 ])
                 .build(),
         )
-        .manage(AppState::default())
+        .setup(|app| {
+            let model_store = app.path().app_local_data_dir()?.join("models");
+            app.manage(AppState::new(model_store)?);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             engine_snapshot,
             engine_dispatch,
@@ -312,7 +416,11 @@ pub fn run() {
             conversation_stop,
             runtime_start,
             runtime_status,
-            runtime_stop
+            runtime_stop,
+            model_status,
+            model_install_all,
+            model_import_pack,
+            model_export_pack
         ])
         .run(tauri::generate_context!())
         .expect("error while running FastTalk");

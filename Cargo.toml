@@ -1,3 +1,3 @@
 [workspace]
-members = ["app/src-tauri", "crates/audio", "crates/conversation", "crates/feasibility", "crates/kokoro-worker", "crates/pipeline", "crates/runtime"]
+members = ["app/src-tauri", "crates/audio", "crates/conversation", "crates/feasibility", "crates/kokoro-worker", "crates/model-manager", "crates/pipeline", "crates/runtime"]
 resolver = "2"

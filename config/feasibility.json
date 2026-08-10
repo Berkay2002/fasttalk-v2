@@ -103,14 +103,14 @@
     },
     {
       "id": "kokoro-82m",
-      "repository": "onnx-community/Kokoro-82M-v1.0-ONNX",
-      "revision": "1939ad2a8e416c0acfeecc08a694d14ef25f2231",
+      "repository": "csukuangfj/kokoro-int8-multi-lang-v1_0",
+      "revision": "5d6cbe65546edb3ebae8bde976c8ad3438b3f34b",
       "environmentVariable": "FASTTALK_KOKORO_MODEL",
-      "defaultPath": ".cache/models/kokoro-82m/model_q8f16.onnx",
-      "remoteFile": "onnx/model_q8f16.onnx",
-      "fileName": "model_q8f16.onnx",
-      "sizeBytes": 86033585,
-      "sha256": "04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0"
+      "defaultPath": ".cache/models/kokoro-sherpa-v1.0/model.int8.onnx",
+      "fileName": "model.int8.onnx",
+      "bundleIncludes": ["LICENSE", "model.int8.onnx", "tokens.txt", "voices.bin", "espeak-ng-data/**"],
+      "sizeBytes": 114298054,
+      "sha256": "77ef4f0513401d508ed7831f8504c7042df58bc75e004ec9666894590f999b1d"
     }
   ],
   "evidence": {

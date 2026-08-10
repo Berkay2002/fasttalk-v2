@@ -7,6 +7,8 @@ import {
   type AudioDevices,
   type AudioStatus,
   type EngineSnapshot,
+  type ModelProgress,
+  type ModelStatus,
   type NativeRuntimeStatus,
   type WorkerStatus,
 } from "./contracts";
@@ -40,6 +42,8 @@ export function useFastTalk() {
   const [runtime, setRuntime] = useState(initialRuntimeStatus);
   const [audio, setAudio] = useState<AudioStatus | null>(null);
   const [devices, setDevices] = useState<AudioDevices>({ inputs: [], outputs: [] });
+  const [models, setModels] = useState<ModelStatus[]>([]);
+  const [modelProgress, setModelProgress] = useState<ModelProgress | null>(null);
   const [inputDeviceId, setInputDeviceId] = useState<string | null>(null);
   const [outputDeviceId, setOutputDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +66,7 @@ export function useFastTalk() {
   useEffect(() => {
     let disposed = false;
     let removeListener: (() => void) | undefined;
+    let removeModelListener: (() => void) | undefined;
 
     void fastTalkApi
       .onEngineSnapshot((next) => {
@@ -75,6 +80,18 @@ export function useFastTalk() {
         } else {
           removeListener = unlisten;
         }
+      })
+      .catch((cause) => {
+        if (!disposed) setError(errorMessage(cause));
+      });
+
+    void fastTalkApi
+      .onModelProgress((progress) => {
+        if (!disposed) setModelProgress(progress);
+      })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else removeModelListener = unlisten;
       })
       .catch((cause) => {
         if (!disposed) setError(errorMessage(cause));
@@ -102,10 +119,17 @@ export function useFastTalk() {
       setLoading(false);
     });
 
+    void fastTalkApi.modelStatus().then((next) => {
+      if (!disposed) setModels(next);
+    }).catch((cause) => {
+      if (!disposed) setError(errorMessage(cause));
+    });
+
     const interval = window.setInterval(() => void refreshStatus(), 1_000);
     return () => {
       disposed = true;
       removeListener?.();
+      removeModelListener?.();
       window.clearInterval(interval);
     };
   }, [refreshStatus]);
@@ -131,6 +155,20 @@ export function useFastTalk() {
   const prepare = useCallback(async () => {
     setBusy("Preparing local services");
     setError(null);
+    let currentModels = models;
+    if (!modelsReady(currentModels)) {
+      try {
+        setBusy("Downloading and verifying local models");
+        currentModels = await fastTalkApi.modelInstallAll();
+        setModels(currentModels);
+        setModelProgress(null);
+      } catch (cause) {
+        setError(errorMessage(cause));
+        setBusy(null);
+        return;
+      }
+    }
+    setBusy("Starting local services");
     const [runtimeResult, audioResult] = await Promise.allSettled([
       fastTalkApi.runtimeStart(),
       fastTalkApi.audioStart({ inputDeviceId, outputDeviceId }),
@@ -142,7 +180,27 @@ export function useFastTalk() {
       .map((result) => errorMessage((result as PromiseRejectedResult).reason));
     if (failures.length > 0) setError(failures.join(" "));
     setBusy(null);
-  }, [inputDeviceId, outputDeviceId]);
+  }, [inputDeviceId, models, outputDeviceId]);
+
+  const installModels = useCallback(
+    () => runAction("Downloading and verifying local models", fastTalkApi.modelInstallAll, (next) => {
+      setModels(next);
+      setModelProgress(null);
+    }),
+    [runAction],
+  );
+
+  const importModelPack = useCallback(
+    () => runAction("Importing offline model pack", fastTalkApi.modelImportPack, (next) => {
+      if (next) setModels(next);
+    }),
+    [runAction],
+  );
+
+  const exportModelPack = useCallback(
+    () => runAction("Exporting offline model pack", fastTalkApi.modelExportPack),
+    [runAction],
+  );
 
   const restartAudio = useCallback(
     () =>
@@ -193,7 +251,10 @@ export function useFastTalk() {
     [runAction, snapshot.state],
   );
 
-  const ready = useMemo(() => workersReady(runtime) && audio?.active === true, [audio, runtime]);
+  const ready = useMemo(
+    () => modelsReady(models) && workersReady(runtime) && audio?.active === true,
+    [audio, models, runtime],
+  );
   const conversationActive = snapshot.state !== "idle";
 
   return {
@@ -201,6 +262,8 @@ export function useFastTalk() {
     runtime,
     audio,
     devices,
+    models,
+    modelProgress,
     inputDeviceId,
     outputDeviceId,
     setInputDeviceId,
@@ -211,6 +274,9 @@ export function useFastTalk() {
     ready,
     conversationActive,
     prepare,
+    installModels,
+    importModelPack,
+    exportModelPack,
     restartAudio,
     startConversation,
     stopConversation,
@@ -219,4 +285,8 @@ export function useFastTalk() {
     stopServices,
     refreshStatus,
   };
+}
+
+export function modelsReady(models: ModelStatus[]): boolean {
+  return models.length > 0 && models.every((model) => model.state === "ready");
 }

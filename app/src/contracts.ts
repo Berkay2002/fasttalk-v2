@@ -79,6 +79,37 @@ export type NativeRuntimeStatus = {
   llm: WorkerStatus | null;
   speech: WorkerStatus | null;
   kokoro: WorkerStatus | null;
+  ttsBackend: "magpie" | "kokoro";
+  vramAdmission: {
+    currentUsedMib: number | null;
+    projectedWarmedMib: number | null;
+    limitMib: number;
+    backend: "magpie" | "kokoro";
+    reason: string;
+  };
+};
+
+export type ModelState = "missing" | "partial" | "ready" | "corrupt";
+
+export type ModelInstallSource = "managed" | "legacy";
+
+export type ModelStatus = {
+  id: string;
+  displayName: string;
+  state: ModelState;
+  source: ModelInstallSource | null;
+  verifiedBytes: number;
+  totalBytes: number;
+  licenseName: string;
+  licenseUrl: string;
+  error: string | null;
+};
+
+export type ModelProgress = {
+  modelId: string;
+  artifact: string;
+  downloadedBytes: number;
+  totalBytes: number;
 };
 
 export type AudioStartRequest = {
@@ -108,4 +139,12 @@ export const initialRuntimeStatus: NativeRuntimeStatus = {
   llm: null,
   speech: null,
   kokoro: null,
+  ttsBackend: "kokoro",
+  vramAdmission: {
+    currentUsedMib: null,
+    projectedWarmedMib: null,
+    limitMib: 23_040,
+    backend: "kokoro",
+    reason: "GPU memory has not been measured yet",
+  },
 };

@@ -82,16 +82,9 @@ select:disabled {
 }
 
 .brand-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid #4b5a4e;
-  border-radius: 9px;
-  color: var(--accent-strong);
-  background: #1d281f;
-  font-size: 16px;
-  font-weight: 720;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .brand-lockup div {
@@ -103,11 +96,6 @@ select:disabled {
   font-size: 15px;
   font-weight: 680;
   letter-spacing: -0.01em;
-}
-
-.brand-lockup div span {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .readiness-label {
@@ -205,83 +193,18 @@ select:disabled {
   line-height: 1.5;
 }
 
-.voice-signal {
-  display: flex;
-  width: 68px;
+.agent-wave {
+  width: 124px;
   height: 68px;
-  flex: 0 0 68px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: #141915;
+  flex: 0 0 124px;
 }
 
-.voice-signal span {
-  width: 3px;
-  height: 9px;
-  border-radius: 3px;
-  background: #657168;
-  transform-origin: center;
-}
-
-.signal-listening,
-.signal-speaking {
-  border-color: rgba(143, 210, 161, 0.48);
-  background: rgba(143, 210, 161, 0.07);
-}
-
-.signal-listening span,
-.signal-speaking span {
-  background: var(--accent);
-}
-
-.signal-thinking span {
-  background: var(--warning);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .signal-listening span,
-  .signal-speaking span {
-    animation: voice-level 1.05s ease-in-out infinite alternate;
-  }
-
-  .signal-thinking span {
-    animation: thinking-level 1.35s ease-in-out infinite;
-  }
-
-  .voice-signal span:nth-child(2),
-  .voice-signal span:nth-child(6) {
-    animation-delay: -0.18s;
-  }
-
-  .voice-signal span:nth-child(3),
-  .voice-signal span:nth-child(5) {
-    animation-delay: -0.36s;
-  }
-
-  .voice-signal span:nth-child(4) {
-    animation-delay: -0.54s;
-  }
-}
-
-@keyframes voice-level {
-  from { transform: scaleY(0.68); }
-  to { transform: scaleY(2.35); }
-}
-
-@keyframes thinking-level {
-  0%, 100% { opacity: 0.38; }
-  50% { opacity: 1; }
-}
-
-.transcript {
+.agent-chat {
   display: flex;
   min-height: 260px;
   flex: 1;
   flex-direction: column;
-  gap: 22px;
+  gap: 14px;
   margin: 30px -6px 0 0;
   padding: 12px 14px 26px 0;
   overflow-y: auto;
@@ -289,55 +212,64 @@ select:disabled {
   scrollbar-width: thin;
 }
 
-.transcript-empty {
-  display: grid;
+.agent-chat-empty {
+  display: flex;
   min-height: 100%;
   flex: 1;
-  place-content: center;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
   text-align: center;
 }
 
-.transcript-empty p {
-  margin: 0;
-  color: #cbd4cd;
-  font-size: 16px;
-}
-
-.transcript-empty span {
-  margin-top: 7px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.transcript-line {
+.agent-message {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
-  gap: 15px;
+  width: fit-content;
+  max-width: min(78%, 680px);
+  gap: 5px;
 }
 
-.transcript-line > span {
-  padding-top: 4px;
+.agent-message > span {
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: 10px;
+  font-weight: 620;
 }
 
-.transcript-line p {
-  max-width: 72ch;
+.agent-message p {
   margin: 0;
-  color: #c7d0c9;
-  font-size: 17px;
-  line-height: 1.58;
-}
-
-.transcript-assistant p {
+  padding: 11px 13px;
+  border-radius: 15px;
   color: var(--text);
+  font-size: 15px;
+  line-height: 1.48;
+  overflow-wrap: anywhere;
 }
 
-.transcript-live p::after {
+.message-user {
+  align-self: flex-end;
+}
+
+.message-user > span {
+  text-align: right;
+}
+
+.message-user p {
+  border-bottom-right-radius: 5px;
+  background: #242d26;
+}
+
+.message-assistant p {
+  padding-left: 0;
+  border-bottom-left-radius: 5px;
+  color: #d5ddd7;
+}
+
+.message-streaming p::after {
   content: "";
   display: inline-block;
-  width: 5px;
+  width: 4px;
   height: 1em;
   margin-left: 5px;
   vertical-align: -0.12em;
@@ -345,9 +277,37 @@ select:disabled {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .transcript-live p::after {
+  .message-streaming p::after {
     animation: caret-blink 1s steps(1, end) infinite;
   }
+}
+
+.agent-thinking {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0;
+}
+
+.agent-thinking span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .agent-thinking span {
+    animation: thinking-dot 1s ease-in-out infinite alternate;
+  }
+
+  .agent-thinking span:nth-child(2) { animation-delay: 0.16s; }
+  .agent-thinking span:nth-child(3) { animation-delay: 0.32s; }
+}
+
+@keyframes thinking-dot {
+  to { opacity: 0.25; transform: translateY(-2px); }
 }
 
 @keyframes caret-blink {
@@ -456,6 +416,73 @@ select:disabled {
   padding: 16px;
   border-radius: var(--control-radius);
   background: #141915;
+}
+
+.model-setup {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+}
+
+.model-progress {
+  display: grid;
+  grid-template-columns: 1fr max-content;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.model-progress progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent-strong);
+}
+
+.model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.model-licenses {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.model-licenses summary {
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.model-licenses div {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.model-licenses span,
+.model-licenses small,
+.model-licenses code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-licenses span {
+  color: #cbd3cd;
+  font-size: 11px;
+}
+
+.model-licenses small,
+.model-licenses code {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .worker-row {
@@ -688,18 +715,17 @@ select:disabled {
     flex-direction: column;
   }
 
-  .voice-signal {
-    width: 54px;
-    height: 54px;
-    flex-basis: 54px;
+  .agent-wave {
+    width: 112px;
+    height: 56px;
+    flex-basis: 112px;
   }
 
-  .transcript-line {
-    grid-template-columns: 1fr;
-    gap: 4px;
+  .agent-message {
+    max-width: 90%;
   }
 
-  .transcript-line p {
+  .agent-message p {
     font-size: 16px;
   }
 

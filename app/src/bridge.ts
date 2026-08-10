@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   AudioDevices,
   AudioStartRequest,
   AudioStatus,
   EngineSnapshot,
+  ModelProgress,
+  ModelStatus,
   NativeRuntimeStatus,
 } from "./contracts";
 
@@ -25,6 +28,29 @@ export const fastTalkApi = {
   conversationStart: () => invoke<EngineSnapshot>("conversation_start"),
   conversationInterrupt: () => invoke<void>("conversation_interrupt"),
   conversationStop: () => invoke<EngineSnapshot>("conversation_stop"),
+  modelStatus: () => invoke<ModelStatus[]>("model_status"),
+  modelInstallAll: () => invoke<ModelStatus[]>("model_install_all"),
+  onModelProgress: (handler: (progress: ModelProgress) => void): Promise<UnlistenFn> =>
+    listen<ModelProgress>("model-progress", ({ payload }) => handler(payload)),
+  modelImportPack: async () => {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "FastTalk model pack", extensions: ["tar"] }],
+    });
+    return typeof path === "string"
+      ? invoke<ModelStatus[]>("model_import_pack", { path })
+      : null;
+  },
+  modelExportPack: async () => {
+    const path = await save({
+      defaultPath: "fasttalk-model-pack.tar",
+      filters: [{ name: "FastTalk model pack", extensions: ["tar"] }],
+    });
+    if (typeof path !== "string") return null;
+    await invoke<void>("model_export_pack", { path });
+    return path;
+  },
 };
 
 export function errorMessage(cause: unknown): string {

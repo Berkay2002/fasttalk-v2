@@ -1,13 +1,16 @@
-import type { ReactNode } from "react";
 import type {
   AudioDeviceInfo,
   ConversationState,
-  EngineSnapshot,
   NativeRuntimeStatus,
+  ModelProgress,
+  ModelStatus,
   WorkerState,
   WorkerStatus,
 } from "./contracts";
-import { useFastTalk, workerList, workersReady } from "./useFastTalk";
+import fastTalkMark from "./assets/fasttalk-mark.png";
+import { AgentChatTranscript } from "./components/AgentChatTranscript";
+import { AgentWave } from "./components/AgentWave";
+import { modelsReady, useFastTalk, workerList, workersReady } from "./useFastTalk";
 import "./App.css";
 
 const stateCopy: Record<ConversationState, { label: string; detail: string }> = {
@@ -32,6 +35,8 @@ function App() {
     runtime,
     audio,
     devices,
+    models,
+    modelProgress,
     inputDeviceId,
     outputDeviceId,
     setInputDeviceId,
@@ -42,6 +47,9 @@ function App() {
     ready,
     conversationActive,
     prepare,
+    installModels,
+    importModelPack,
+    exportModelPack,
     restartAudio,
     startConversation,
     stopConversation,
@@ -53,6 +61,7 @@ function App() {
   const selectedAudioChanged =
     audio !== null &&
     (audio.inputDeviceId !== inputDeviceId || audio.outputDeviceId !== outputDeviceId);
+  const localModelsReady = modelsReady(models);
 
   if (loading) {
     return <LoadingScreen />;
@@ -62,10 +71,9 @@ function App() {
     <main className="app-shell" data-conversation-state={snapshot.state} aria-busy={busy !== null}>
       <header className="app-header">
         <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">F</span>
+          <img className="brand-mark" src={fastTalkMark} alt="" />
           <div>
             <strong>FastTalk</strong>
-            <span>Private voice on this PC</span>
           </div>
         </div>
         <ReadinessLabel ready={ready} busy={busy} />
@@ -81,14 +89,14 @@ function App() {
       <div className="workspace-grid">
         <section className="conversation-pane" aria-labelledby="conversation-heading">
           <div className="conversation-state">
-            <VoiceSignal state={snapshot.state} />
+            <AgentWave state={snapshot.state} voiceActive={audio?.speechActive ?? false} />
             <div>
               <h1 id="conversation-heading">{copy.label}</h1>
               <p>{snapshot.lastError ?? copy.detail}</p>
             </div>
           </div>
 
-          <Transcript snapshot={snapshot} ready={ready} />
+          <AgentChatTranscript snapshot={snapshot} />
 
           <div className="conversation-controls" aria-label="Conversation controls">
             {!conversationActive ? (
@@ -131,10 +139,19 @@ function App() {
           <div className="section-heading">
             <div>
               <h2 id="setup-heading">Local setup</h2>
-              <p>{setupSummary(runtime, audio !== null)}</p>
+              <p>{setupSummary(runtime, audio !== null, localModelsReady)}</p>
             </div>
-            <SetupCount runtime={runtime} audioReady={audio?.active === true} />
+            <SetupCount runtime={runtime} audioReady={audio?.active === true} modelsReady={localModelsReady} />
           </div>
+
+          <ModelSetup
+            models={models}
+            progress={modelProgress}
+            busy={busy !== null || conversationActive}
+            onInstall={() => void installModels()}
+            onImport={() => void importModelPack()}
+            onExport={() => void exportModelPack()}
+          />
 
           <div className="worker-list" aria-label="Local service readiness">
             <WorkerRow name="Language model" worker={runtime.llm} />
@@ -221,65 +238,71 @@ function ReadinessLabel({ ready, busy }: { ready: boolean; busy: string | null }
   );
 }
 
-function VoiceSignal({ state }: { state: ConversationState }) {
-  return (
-    <div className={`voice-signal signal-${state}`} aria-hidden="true">
-      {[0, 1, 2, 3, 4, 5, 6].map((bar) => <span key={bar} />)}
-    </div>
-  );
+function SetupCount({
+  runtime,
+  audioReady,
+  modelsReady: modelReady,
+}: {
+  runtime: NativeRuntimeStatus;
+  audioReady: boolean;
+  modelsReady: boolean;
+}) {
+  const count = workerList(runtime).filter((worker) => worker.state === "ready").length
+    + Number(audioReady)
+    + Number(modelReady);
+  return <span className="setup-count" aria-label={`${count} of 5 setup components ready`}>{count}/5 ready</span>;
 }
 
-function Transcript({ snapshot, ready }: { snapshot: EngineSnapshot; ready: boolean }) {
-  const currentUser = snapshot.committedTranscript || snapshot.partialTranscript;
-  const hasContent =
-    snapshot.transcript.length > 0 || currentUser.length > 0 || snapshot.assistantTranscript.length > 0;
+function ModelSetup({
+  models,
+  progress,
+  busy,
+  onInstall,
+  onImport,
+  onExport,
+}: {
+  models: ModelStatus[];
+  progress: ModelProgress | null;
+  busy: boolean;
+  onInstall: () => void;
+  onImport: () => void;
+  onExport: () => void;
+}) {
+  const ready = modelsReady(models);
+  const verified = models.filter((model) => model.state === "ready").length;
+  const progressPercent = progress && progress.totalBytes > 0
+    ? Math.round((progress.downloadedBytes / progress.totalBytes) * 100)
+    : null;
   return (
-    <div className="transcript" aria-live="polite" aria-relevant="additions text">
-      {!hasContent && (
-        <div className="transcript-empty">
-          <p>{ready ? "Your conversation will appear here." : "Complete local setup to begin."}</p>
-          <span>Audio and inference stay on this computer.</span>
+    <section className="model-setup" aria-label="Local model setup">
+      <div className="worker-row">
+        <span className={`semantic-state state-${ready ? "ready" : progress ? "starting" : "stopped"}`} />
+        <span>Local model files</span>
+        <small>{ready ? "Verified" : `${verified}/${models.length || 5}`}</small>
+      </div>
+      {progress && (
+        <div className="model-progress" role="status">
+          <progress value={progress.downloadedBytes} max={progress.totalBytes} />
+          <span>{progress.modelId} {progressPercent}%</span>
         </div>
       )}
-      {snapshot.transcript.map((message, index) => (
-        <TranscriptLine key={`${index}-${message.role}-${message.text}`} role={message.role}>
-          {message.text}
-        </TranscriptLine>
-      ))}
-      {currentUser && (
-        <TranscriptLine role="user" live={snapshot.partialTranscript.length > 0}>
-          {currentUser}
-        </TranscriptLine>
-      )}
-      {snapshot.assistantTranscript && (
-        <TranscriptLine role="assistant" live>
-          {snapshot.assistantTranscript}
-        </TranscriptLine>
-      )}
-    </div>
+      <div className="model-actions">
+        {!ready && <button className="text-action" disabled={busy} onClick={onInstall}>Download models</button>}
+        <button className="text-action" disabled={busy} onClick={onImport}>Import offline pack</button>
+        <button className="text-action" disabled={busy || !ready} onClick={onExport}>Export offline pack</button>
+      </div>
+      <details className="model-licenses">
+        <summary>Model versions and licenses</summary>
+        {models.map((model) => (
+          <div key={model.id}>
+            <span>{model.displayName}</span>
+            <small>{model.licenseName}</small>
+            <code title={model.licenseUrl}>{model.licenseUrl}</code>
+          </div>
+        ))}
+      </details>
+    </section>
   );
-}
-
-function TranscriptLine({
-  role,
-  live = false,
-  children,
-}: {
-  role: "user" | "assistant";
-  live?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`transcript-line transcript-${role}${live ? " transcript-live" : ""}`}>
-      <span>{role === "user" ? "You" : "FastTalk"}</span>
-      <p>{children}</p>
-    </div>
-  );
-}
-
-function SetupCount({ runtime, audioReady }: { runtime: NativeRuntimeStatus; audioReady: boolean }) {
-  const count = workerList(runtime).filter((worker) => worker.state === "ready").length + Number(audioReady);
-  return <span className="setup-count" aria-label={`${count} of 4 setup components ready`}>{count}/4 ready</span>;
 }
 
 function WorkerRow({ name, worker }: { name: string; worker: WorkerStatus | null }) {
@@ -336,6 +359,13 @@ function Diagnostics({
     <details className="diagnostics">
       <summary>Diagnostics</summary>
       <div className="diagnostic-metrics">
+        <Metric label="Voice backend" value={runtime.ttsBackend === "magpie" ? "Magpie GPU" : "Kokoro CPU"} />
+        <Metric
+          label="Projected VRAM"
+          value={runtime.vramAdmission.projectedWarmedMib == null
+            ? "Not measured"
+            : `${runtime.vramAdmission.projectedWarmedMib} / ${runtime.vramAdmission.limitMib} MiB`}
+        />
         <Metric label="Queued audio" value={audio ? `${audio.queuedPlaybackSamples} samples` : "Unavailable"} />
         <Metric label="Capture drops" value={String(audio?.droppedCaptureSamples ?? 0)} />
         <Metric label="Playback drops" value={String(audio?.droppedPlaybackSamples ?? 0)} />
@@ -377,8 +407,13 @@ function workerStateLabel(state: WorkerState): string {
   return labels[state];
 }
 
-function setupSummary(runtime: NativeRuntimeStatus, audioReady: boolean): string {
-  if (workersReady(runtime) && audioReady) return "Models and Windows audio are ready.";
+function setupSummary(
+  runtime: NativeRuntimeStatus,
+  audioReady: boolean,
+  modelReady: boolean,
+): string {
+  if (modelReady && workersReady(runtime) && audioReady) return "Models and Windows audio are ready.";
+  if (!modelReady) return "Download or import the verified local model pack.";
   if (workerList(runtime).some((worker) => worker.state === "starting")) return "Loading local models into memory.";
   return "Choose audio devices, then start the local models.";
 }

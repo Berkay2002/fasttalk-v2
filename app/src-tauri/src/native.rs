@@ -5,11 +5,31 @@ use serde::Serialize;
 use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
 const LLM_PORT: u16 = 18_080;
 const SPEECH_PORT: u16 = 18_081;
 const KOKORO_PORT: u16 = 18_082;
+const MAX_WARMED_VRAM_MIB: u64 = 23_040;
+const MEASURED_COMBINED_WORKER_VRAM_MIB: u64 = 19_584;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PreferredTtsBackend {
+    Magpie,
+    Kokoro,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VramAdmission {
+    pub current_used_mib: Option<u64>,
+    pub projected_warmed_mib: Option<u64>,
+    pub limit_mib: u64,
+    pub backend: PreferredTtsBackend,
+    pub reason: String,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,29 +37,68 @@ pub struct NativeRuntimeStatus {
     pub llm: Option<WorkerStatus>,
     pub speech: Option<WorkerStatus>,
     pub kokoro: Option<WorkerStatus>,
+    pub tts_backend: PreferredTtsBackend,
+    pub vram_admission: VramAdmission,
 }
 
 pub struct NativeRuntime {
     root: PathBuf,
+    models: NativeModelPaths,
     llm: Option<WorkerSupervisor>,
     speech: Option<WorkerSupervisor>,
     kokoro: Option<WorkerSupervisor>,
+    vram_admission: VramAdmission,
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeModelPaths {
+    pub qwen: PathBuf,
+    pub asr: PathBuf,
+    pub magpie: PathBuf,
+    pub nanocodec: PathBuf,
+    pub magpie_tokenizer: PathBuf,
+    pub kokoro: PathBuf,
 }
 
 impl NativeRuntime {
     pub fn for_development_checkout() -> Self {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let models = NativeModelPaths {
+            qwen: root.join(".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf"),
+            asr: root.join(".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+            magpie: root
+                .join(".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
+            nanocodec: root.join(
+                ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+            ),
+            magpie_tokenizer: root.join(".cache/models/magpie-tts/extracted"),
+            kokoro: root.join(".cache/models/kokoro-sherpa-v1.0"),
+        };
         Self {
-            root: Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+            root,
+            models,
             llm: None,
             speech: None,
             kokoro: None,
+            vram_admission: fallback_admission("GPU memory has not been measured yet"),
         }
+    }
+
+    pub fn configure_models(&mut self, models: NativeModelPaths) -> Result<(), SupervisorError> {
+        if self.llm.is_some() || self.speech.is_some() || self.kokoro.is_some() {
+            return Err(SupervisorError::InvalidSpec(
+                "cannot change model paths while native workers are running".to_owned(),
+            ));
+        }
+        self.models = models;
+        Ok(())
     }
 
     pub fn start(&mut self) -> Result<NativeRuntimeStatus, SupervisorError> {
         if self.llm.is_some() || self.speech.is_some() || self.kokoro.is_some() {
             return self.poll();
         }
+        self.vram_admission = admit_vram();
         let mut llm = self.build_llm()?;
         let mut speech = self.build_speech()?;
         let mut kokoro = self.build_kokoro()?;
@@ -72,6 +131,8 @@ impl NativeRuntime {
                 .as_mut()
                 .map(WorkerSupervisor::poll)
                 .transpose()?,
+            tts_backend: self.vram_admission.backend,
+            vram_admission: self.vram_admission.clone(),
         })
     }
 
@@ -89,6 +150,8 @@ impl NativeRuntime {
             llm: self.llm.as_ref().map(WorkerSupervisor::status),
             speech: self.speech.as_ref().map(WorkerSupervisor::status),
             kokoro: self.kokoro.as_ref().map(WorkerSupervisor::status),
+            tts_backend: self.vram_admission.backend,
+            vram_admission: self.vram_admission.clone(),
         };
         self.llm = None;
         self.speech = None;
@@ -98,12 +161,10 @@ impl NativeRuntime {
 
     fn build_llm(&self) -> Result<WorkerSupervisor, SupervisorError> {
         let executable = self.root.join("runtime/llm/llama-server.exe");
-        let model = self
-            .root
-            .join(".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf");
+        let model = &self.models.qwen;
         let arguments = os_arguments([
             "--model",
-            path_text(&model)?,
+            path_text(model)?,
             "--ctx-size",
             "16384",
             "--gpu-layers",
@@ -145,32 +206,30 @@ impl NativeRuntime {
 
     fn build_speech(&self) -> Result<WorkerSupervisor, SupervisorError> {
         let executable = self.root.join("runtime/asr/nemo-speech.exe");
-        let asr = self
-            .root
-            .join(".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf");
-        let tts = self
-            .root
-            .join(".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf");
-        let codec = self.root.join(
-            ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
-        );
-        let tokenizer = self.root.join(".cache/models/magpie-tts/extracted");
-        let arguments = os_arguments([
+        let asr = &self.models.asr;
+        let tts = &self.models.magpie;
+        let codec = &self.models.nanocodec;
+        let tokenizer = &self.models.magpie_tokenizer;
+        let mut arguments = os_arguments([
             "serve",
             "--asr-model",
-            path_text(&asr)?,
-            "--tts-model",
-            path_text(&tts)?,
-            "--codec-model",
-            path_text(&codec)?,
-            "--tokenizer-dir",
-            path_text(&tokenizer)?,
+            path_text(asr)?,
             "--host",
             "127.0.0.1",
             "--port",
             "18081",
             "--no-ui",
         ]);
+        if self.vram_admission.backend == PreferredTtsBackend::Magpie {
+            arguments.extend(os_arguments([
+                "--tts-model",
+                path_text(tts)?,
+                "--codec-model",
+                path_text(codec)?,
+                "--tokenizer-dir",
+                path_text(tokenizer)?,
+            ]));
+        }
         WorkerSupervisor::new(
             WorkerSpec {
                 id: "speech".to_owned(),
@@ -197,10 +256,10 @@ impl NativeRuntime {
 
     fn build_kokoro(&self) -> Result<WorkerSupervisor, SupervisorError> {
         let executable = self.root.join("runtime/tts/kokoro-worker.exe");
-        let model_dir = self.root.join(".cache/models/kokoro-sherpa");
+        let model_dir = &self.models.kokoro;
         let arguments = os_arguments([
             "--model-dir",
-            path_text(&model_dir)?,
+            path_text(model_dir)?,
             "--host",
             "127.0.0.1",
             "--port",
@@ -231,6 +290,72 @@ impl NativeRuntime {
             RestartPolicy::default(),
         )
     }
+}
+
+fn admit_vram() -> VramAdmission {
+    admission_for(query_used_vram_mib())
+}
+
+fn admission_for(current_used_mib: Option<u64>) -> VramAdmission {
+    let Some(current_used_mib) = current_used_mib else {
+        return fallback_admission(
+            "NVIDIA memory usage could not be measured, so GPU TTS was disabled",
+        );
+    };
+    let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMBINED_WORKER_VRAM_MIB);
+    if projected_warmed_mib <= MAX_WARMED_VRAM_MIB {
+        VramAdmission {
+            current_used_mib: Some(current_used_mib),
+            projected_warmed_mib: Some(projected_warmed_mib),
+            limit_mib: MAX_WARMED_VRAM_MIB,
+            backend: PreferredTtsBackend::Magpie,
+            reason: "measured desktop usage leaves enough room for warmed Magpie TTS".to_owned(),
+        }
+    } else {
+        VramAdmission {
+            current_used_mib: Some(current_used_mib),
+            projected_warmed_mib: Some(projected_warmed_mib),
+            limit_mib: MAX_WARMED_VRAM_MIB,
+            backend: PreferredTtsBackend::Kokoro,
+            reason: "projected warmed usage exceeds the GPU memory policy; using CPU TTS"
+                .to_owned(),
+        }
+    }
+}
+
+fn fallback_admission(reason: &str) -> VramAdmission {
+    VramAdmission {
+        current_used_mib: None,
+        projected_warmed_mib: None,
+        limit_mib: MAX_WARMED_VRAM_MIB,
+        backend: PreferredTtsBackend::Kokoro,
+        reason: reason.to_owned(),
+    }
+}
+
+fn query_used_vram_mib() -> Option<u64> {
+    let mut command = Command::new("nvidia-smi");
+    command.args([
+        "--query-gpu=memory.used",
+        "--format=csv,noheader,nounits",
+        "--id=0",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .next()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn path_text(path: &Path) -> Result<&str, SupervisorError> {
@@ -266,6 +391,21 @@ mod tests {
     use fasttalk_runtime::WorkerState;
     use std::time::Instant;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn vram_policy_uses_cpu_tts_above_the_measured_limit() {
+        let exact = admission_for(Some(
+            MAX_WARMED_VRAM_MIB - MEASURED_COMBINED_WORKER_VRAM_MIB,
+        ));
+        assert_eq!(exact.backend, PreferredTtsBackend::Magpie);
+        assert_eq!(exact.projected_warmed_mib, Some(MAX_WARMED_VRAM_MIB));
+
+        let over = admission_for(Some(
+            MAX_WARMED_VRAM_MIB - MEASURED_COMBINED_WORKER_VRAM_MIB + 1,
+        ));
+        assert_eq!(over.backend, PreferredTtsBackend::Kokoro);
+        assert_eq!(admission_for(None).backend, PreferredTtsBackend::Kokoro);
+    }
 
     #[test]
     #[ignore = "loads the pinned GPU models and requires the FastTalk hardware profile"]

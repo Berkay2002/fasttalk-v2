@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Output = "artifacts/feasibility/kokoro-fallback-transport.json",
-    [int]$Port = 18082
+    [int]$Port = 18082,
+    [string]$ModelDir = ".cache/models/kokoro-sherpa"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,7 @@ $stderr = Join-Path $artifactDir "kokoro-fallback.stderr.log"
 $stdout = Join-Path $artifactDir "kokoro-fallback.stdout.log"
 $process = Start-Process -FilePath (Join-Path $workspace "runtime/tts/kokoro-worker.exe") `
     -ArgumentList @(
-        "--model-dir", (Join-Path $workspace ".cache/models/kokoro-sherpa"),
+        "--model-dir", (Join-Path $workspace $ModelDir),
         "--host", "127.0.0.1", "--port", $Port.ToString(), "--threads", "4"
     ) -PassThru -WindowStyle Hidden -RedirectStandardError $stderr -RedirectStandardOutput $stdout
 

@@ -19,9 +19,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2.7.2"
 tauri-plugin-log = "2.9.0"
 fasttalk-audio = { path = "../../crates/audio" }
 fasttalk-conversation = { path = "../../crates/conversation" }
+fasttalk-model-manager = { path = "../../crates/model-manager" }
 fasttalk-pipeline = { path = "../../crates/pipeline" }
 fasttalk-runtime = { path = "../../crates/runtime" }
 log = "0.4"
