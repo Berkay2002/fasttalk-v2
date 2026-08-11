@@ -10,7 +10,6 @@ use fasttalk_pipeline::{
     AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
     PipelineError, RealtimeAsrClient, TtsEvent,
 };
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::async_runtime::JoinHandle;
@@ -49,9 +48,8 @@ pub fn start(
     engine: SharedEngine,
     audio: SharedAudio,
     tts_backend: PreferredTtsBackend,
-    turn_detector_path: &Path,
-) -> Result<ConversationController, String> {
-    let turn_detector = SmartTurnDetector::new(turn_detector_path)?;
+    turn_detector: SmartTurnDetector,
+) -> ConversationController {
     let cancellation = CancellationToken::new();
     let task_cancellation = cancellation.clone();
     let (control, control_receiver) = mpsc::unbounded_channel();
@@ -78,11 +76,11 @@ pub fn start(
             );
         }
     });
-    Ok(ConversationController {
+    ConversationController {
         cancellation,
         control,
         task,
-    })
+    }
 }
 
 async fn run(

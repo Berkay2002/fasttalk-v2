@@ -153,7 +153,7 @@ impl ModelManager {
             return Ok(Some(managed));
         }
         let legacy = self.workspace_root.join(&model.legacy_root);
-        if verify_group(model, &legacy).is_ok() {
+        if self.verify_legacy_group(model, &legacy).is_ok() {
             return Ok(Some(legacy));
         }
         Ok(None)
@@ -221,7 +221,7 @@ impl ModelManager {
             return ready_status(model, total_bytes, InstallSource::Managed);
         }
         let legacy = self.workspace_root.join(&model.legacy_root);
-        if verify_group(model, &legacy).is_ok() {
+        if self.verify_legacy_group(model, &legacy).is_ok() {
             return ready_status(model, total_bytes, InstallSource::Legacy);
         }
         let staging = self.staging_root(model);
@@ -463,6 +463,30 @@ impl ModelManager {
 
     fn verify_managed_group(&self, model: &ModelGroup) -> Result<(), ModelManagerError> {
         let root = self.managed_root(model);
+        self.verify_receipted_group(model, &root)
+    }
+
+    fn verify_legacy_group(
+        &self,
+        model: &ModelGroup,
+        root: &Path,
+    ) -> Result<(), ModelManagerError> {
+        if self.verify_receipted_group(model, root).is_ok() {
+            return Ok(());
+        }
+        verify_group(model, root)?;
+        // A legacy checkout may be read-only. Verification is still valid for
+        // this run, but writable caches get a receipt so future checks only
+        // need file metadata instead of hashing model weights again.
+        let _ = self.write_receipt(model, root);
+        Ok(())
+    }
+
+    fn verify_receipted_group(
+        &self,
+        model: &ModelGroup,
+        root: &Path,
+    ) -> Result<(), ModelManagerError> {
         let path = root.join(".fasttalk-install.json");
         let bytes = std::fs::read(&path).map_err(|source| io_error(&path, source))?;
         let receipt: InstallReceipt =
@@ -726,6 +750,13 @@ mod tests {
         let status = manager.statuses().remove(0);
         assert_eq!(status.state, ModelState::Ready);
         assert_eq!(status.source, Some(InstallSource::Legacy));
+        assert!(
+            legacy
+                .parent()
+                .unwrap()
+                .join(".fasttalk-install.json")
+                .is_file()
+        );
 
         std::fs::write(&legacy, b"corrupt").unwrap();
         let status = manager.statuses().remove(0);

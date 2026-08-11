@@ -11,14 +11,18 @@ use fasttalk_runtime::WorkerState;
 use native::{ModelBinding, NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 struct AppState {
     engine: SharedEngine,
     audio: SharedAudio,
-    runtime: Mutex<NativeRuntime>,
+    runtime: Arc<Mutex<NativeRuntime>>,
+    runtime_start_cancelled: Arc<AtomicBool>,
     conversation: Mutex<Option<ConversationController>>,
     models: Arc<ModelManager>,
 }
@@ -39,7 +43,8 @@ impl AppState {
         Ok(Self {
             engine: Arc::new(Mutex::new(ConversationEngine::default())),
             audio: Arc::new(Mutex::new(None)),
-            runtime: Mutex::new(NativeRuntime::for_root(runtime_root)),
+            runtime: Arc::new(Mutex::new(NativeRuntime::for_root(runtime_root))),
+            runtime_start_cancelled: Arc::new(AtomicBool::new(false)),
             conversation: Mutex::new(None),
             models: Arc::new(models),
         })
@@ -175,12 +180,11 @@ fn audio_stop(state: State<'_, AppState>) -> Result<(), CommandError> {
 }
 
 #[tauri::command]
-fn conversation_start(
+async fn conversation_start(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<EngineSnapshot, CommandError> {
-    let mut controller = lock(&state.conversation, "conversationUnavailable")?;
-    if controller.is_some() {
+    if lock(&state.conversation, "conversationUnavailable")?.is_some() {
         return Ok(lock_engine(&state)?.snapshot());
     }
     let workers = lock(&state.runtime, "runtimeUnavailable")?
@@ -192,13 +196,37 @@ fn conversation_start(
             message: "native ASR, LLM, and TTS workers are not ready".to_owned(),
         });
     }
-    if lock(&state.audio, "audioUnavailable")?.is_none() {
-        return Err(CommandError {
-            code: "audioNotReady",
-            message: "native audio is not running".to_owned(),
-        });
+    {
+        let audio = lock(&state.audio, "audioUnavailable")?;
+        if audio.is_none() {
+            return Err(CommandError {
+                code: "audioNotReady",
+                message: "native audio is not running".to_owned(),
+            });
+        }
     }
 
+    let profile = lock(&state.runtime, "runtimeUnavailable")?
+        .profile()
+        .clone();
+    let models = Arc::clone(&state.models);
+    let turn_detector = tokio::task::spawn_blocking(move || {
+        let path = binding_model_path(&models, &profile.turn_detector)?;
+        smart_turn::SmartTurnDetector::new(&path).map_err(|message| CommandError {
+            code: "turnDetectorUnavailable",
+            message,
+        })
+    })
+    .await
+    .map_err(|error| CommandError {
+        code: "turnDetectorTaskFailed",
+        message: format!("Smart Turn loading task failed: {error}"),
+    })??;
+
+    let mut controller = lock(&state.conversation, "conversationUnavailable")?;
+    if controller.is_some() {
+        return Ok(lock_engine(&state)?.snapshot());
+    }
     let snapshot = {
         let mut engine = lock_engine(&state)?;
         if engine.snapshot().state != ConversationState::Idle {
@@ -210,23 +238,16 @@ fn conversation_start(
             .apply(ConversationEvent::StartListening)
             .map_err(invalid_transition)?
     };
-    let profile = lock(&state.runtime, "runtimeUnavailable")?
-        .profile()
-        .clone();
-    let turn_detector_path = binding_model_path(&state.models, &profile.turn_detector)?;
-    *controller = Some(
-        orchestrator::start(
-            app,
-            state.engine.clone(),
-            state.audio.clone(),
-            workers.tts_backend,
-            &turn_detector_path,
-        )
-        .map_err(|message| CommandError {
-            code: "turnDetectorUnavailable",
-            message,
-        })?,
-    );
+    if let Some(audio) = lock(&state.audio, "audioUnavailable")?.as_mut() {
+        audio.begin_asr_session();
+    }
+    *controller = Some(orchestrator::start(
+        app,
+        state.engine.clone(),
+        state.audio.clone(),
+        workers.tts_backend,
+        turn_detector,
+    ));
     Ok(snapshot)
 }
 
@@ -252,8 +273,9 @@ async fn conversation_stop(state: State<'_, AppState>) -> Result<EngineSnapshot,
     if let Some(controller) = controller {
         controller.stop().await;
     }
-    if let Some(audio) = lock(&state.audio, "audioUnavailable")?.as_ref() {
+    if let Some(audio) = lock(&state.audio, "audioUnavailable")?.as_mut() {
         audio.cancel_playback();
+        audio.end_asr_session();
     }
     lock_engine(&state)?
         .apply(ConversationEvent::Reset)
@@ -261,16 +283,36 @@ async fn conversation_stop(state: State<'_, AppState>) -> Result<EngineSnapshot,
 }
 
 #[tauri::command]
-fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
-    let profile = lock(&state.runtime, "runtimeUnavailable")?
-        .profile()
-        .clone();
-    let models = native_model_paths(&state.models, &profile)?;
-    let mut runtime = lock(&state.runtime, "runtimeUnavailable")?;
-    runtime.configure_models(models).map_err(runtime_error)?;
-    let status = runtime.start().map_err(runtime_error)?;
-    log::info!("native workers started");
-    Ok(status)
+async fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
+    let runtime = Arc::clone(&state.runtime);
+    let models = Arc::clone(&state.models);
+    let cancelled = Arc::clone(&state.runtime_start_cancelled);
+    cancelled.store(false, Ordering::Release);
+    let profile = lock(&runtime, "runtimeUnavailable")?.profile().clone();
+    tokio::task::spawn_blocking(move || {
+        let model_paths = native_model_paths(&models, &profile)?;
+        if cancelled.load(Ordering::Acquire) {
+            return Err(CommandError {
+                code: "runtimeStartCancelled",
+                message: "Local service startup was cancelled.".to_owned(),
+            });
+        }
+        let mut runtime = lock(&runtime, "runtimeUnavailable")?;
+        if cancelled.load(Ordering::Acquire) {
+            return Err(CommandError {
+                code: "runtimeStartCancelled",
+                message: "Local service startup was cancelled.".to_owned(),
+            });
+        }
+        runtime
+            .configure_models(model_paths)
+            .map_err(runtime_error)?;
+        let status = runtime.start().map_err(runtime_error)?;
+        log::info!("native workers started");
+        Ok(status)
+    })
+    .await
+    .map_err(runtime_task_error)?
 }
 
 fn native_model_paths(
@@ -316,19 +358,35 @@ fn binding_model_path(
 }
 
 #[tauri::command]
-fn runtime_status(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
-    lock(&state.runtime, "runtimeUnavailable")?
-        .poll()
-        .map_err(runtime_error)
+fn runtime_cancel_start(state: State<'_, AppState>) {
+    state.runtime_start_cancelled.store(true, Ordering::Release);
 }
 
 #[tauri::command]
-fn runtime_stop(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
-    let status = lock(&state.runtime, "runtimeUnavailable")?
-        .stop()
-        .map_err(runtime_error)?;
-    log::info!("native workers stopped");
-    Ok(status)
+async fn runtime_status(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
+    let runtime = Arc::clone(&state.runtime);
+    tokio::task::spawn_blocking(move || {
+        lock(&runtime, "runtimeUnavailable")?
+            .poll()
+            .map_err(runtime_error)
+    })
+    .await
+    .map_err(runtime_task_error)?
+}
+
+#[tauri::command]
+async fn runtime_stop(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
+    state.runtime_start_cancelled.store(true, Ordering::Release);
+    let runtime = Arc::clone(&state.runtime);
+    tokio::task::spawn_blocking(move || {
+        let status = lock(&runtime, "runtimeUnavailable")?
+            .stop()
+            .map_err(runtime_error)?;
+        log::info!("native workers stopped");
+        Ok(status)
+    })
+    .await
+    .map_err(runtime_task_error)?
 }
 
 #[tauri::command]
@@ -399,6 +457,13 @@ fn runtime_error(error: fasttalk_runtime::SupervisorError) -> CommandError {
     }
 }
 
+fn runtime_task_error(error: tokio::task::JoinError) -> CommandError {
+    CommandError {
+        code: "runtimeTaskFailed",
+        message: format!("local service task failed: {error}"),
+    }
+}
+
 fn invalid_transition(error: fasttalk_conversation::InvalidTransition) -> CommandError {
     CommandError {
         code: "invalidTransition",
@@ -462,6 +527,7 @@ pub fn run() {
             conversation_interrupt,
             conversation_stop,
             runtime_start,
+            runtime_cancel_start,
             runtime_status,
             runtime_stop,
             model_status,

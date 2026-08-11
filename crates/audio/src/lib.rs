@@ -105,6 +105,7 @@ struct SharedState {
     muted: AtomicBool,
     speech_active: AtomicBool,
     interruption_active: AtomicBool,
+    asr_session_active: AtomicBool,
     cancel_epoch: AtomicU64,
     cancel_requested_micros: AtomicU64,
     cancel_latency_micros: AtomicU64,
@@ -122,6 +123,7 @@ impl SharedState {
             muted: AtomicBool::new(false),
             speech_active: AtomicBool::new(false),
             interruption_active: AtomicBool::new(false),
+            asr_session_active: AtomicBool::new(false),
             cancel_epoch: AtomicU64::new(0),
             cancel_requested_micros: AtomicU64::new(0),
             cancel_latency_micros: AtomicU64::new(0),
@@ -358,6 +360,25 @@ impl AudioEngine {
         self.asr_consumer.pop_slice(output)
     }
 
+    pub fn begin_asr_session(&mut self) {
+        self.asr_consumer.clear();
+        self.shared.dropped_asr.store(0, Ordering::Relaxed);
+        self.shared
+            .asr_session_active
+            .store(true, Ordering::Release);
+    }
+
+    pub fn end_asr_session(&mut self) {
+        self.shared
+            .asr_session_active
+            .store(false, Ordering::Release);
+        self.asr_consumer.clear();
+        self.shared.speech_active.store(false, Ordering::Release);
+        self.shared
+            .interruption_active
+            .store(false, Ordering::Release);
+    }
+
     pub fn set_muted(&self, muted: bool) {
         self.shared.muted.store(muted, Ordering::Release);
     }
@@ -515,12 +536,18 @@ fn run_processor(
         shared
             .speech_active
             .store(output.speech_active, Ordering::Release);
-        let accepted = asr_producer.push_slice(&output.asr_samples);
-        shared.dropped_asr.fetch_add(
-            (output.asr_samples.len() - accepted) as u64,
-            Ordering::Relaxed,
-        );
+        enqueue_asr_samples(&mut asr_producer, &shared, &output.asr_samples);
     }
+}
+
+fn enqueue_asr_samples(producer: &mut HeapProd<f32>, shared: &SharedState, samples: &[f32]) {
+    if !shared.asr_session_active.load(Ordering::Acquire) {
+        return;
+    }
+    let accepted = producer.push_slice(samples);
+    shared
+        .dropped_asr
+        .fetch_add((samples.len() - accepted) as u64, Ordering::Relaxed);
 }
 
 fn reference_safe_push(producer: &mut HeapProd<f32>, sample: f32) -> Result<(), f32> {
@@ -566,6 +593,20 @@ mod tests {
     fn shared_clock_reports_elapsed_time() {
         let shared = SharedState::new();
         assert!(shared.elapsed_micros() < 1_000_000);
+    }
+
+    #[test]
+    fn asr_queue_ignores_capture_outside_a_conversation() {
+        let shared = Arc::new(SharedState::new());
+        let (mut producer, consumer) = HeapRb::<f32>::new(4).split();
+        enqueue_asr_samples(&mut producer, &shared, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(consumer.occupied_len(), 0);
+        assert_eq!(shared.dropped_asr.load(Ordering::Relaxed), 0);
+
+        shared.asr_session_active.store(true, Ordering::Release);
+        enqueue_asr_samples(&mut producer, &shared, &[1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(consumer.occupied_len(), 4);
+        assert_eq!(shared.dropped_asr.load(Ordering::Relaxed), 1);
     }
 
     #[test]
