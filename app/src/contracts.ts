@@ -82,6 +82,7 @@ export type NativeRuntimeStatus = {
   profileId: string;
   ttsBackend: "magpie" | "kokoro";
   vramAdmission: {
+    startupAdmitted: boolean;
     currentUsedMib: number | null;
     totalMib: number | null;
     projectedWarmedMib: number | null;
@@ -146,6 +147,7 @@ export const initialRuntimeStatus: NativeRuntimeStatus = {
   profileId: "unconfigured",
   ttsBackend: "kokoro",
   vramAdmission: {
+    startupAdmitted: false,
     currentUsedMib: null,
     totalMib: null,
     projectedWarmedMib: null,

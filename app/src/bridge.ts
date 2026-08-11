@@ -23,6 +23,7 @@ export const fastTalkApi = {
     invoke<AudioStatus>("audio_set_muted", { muted }),
   audioStop: () => invoke<void>("audio_stop"),
   runtimeStart: () => invoke<NativeRuntimeStatus>("runtime_start"),
+  runtimeCancelStart: () => invoke<void>("runtime_cancel_start"),
   runtimeStatus: () => invoke<NativeRuntimeStatus>("runtime_status"),
   runtimeStop: () => invoke<NativeRuntimeStatus>("runtime_stop"),
   conversationStart: () => invoke<EngineSnapshot>("conversation_start"),

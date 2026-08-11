@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type {
   AudioDeviceInfo,
   ConversationState,
@@ -10,7 +11,8 @@ import type {
 import fastTalkMark from "./assets/fasttalk-mark.png";
 import { AgentChatTranscript } from "./components/AgentChatTranscript";
 import { AgentWave } from "./components/AgentWave";
-import { modelsReady, useFastTalk, workerList, workersReady } from "./useFastTalk";
+import { modelVerificationView } from "./setupPresentation";
+import { useFastTalk, workerList, workersReady, type StartupActivity } from "./useFastTalk";
 import "./App.css";
 
 const stateCopy: Record<ConversationState, { label: string; detail: string }> = {
@@ -42,11 +44,14 @@ function App() {
     setInputDeviceId,
     setOutputDeviceId,
     loading,
+    modelsLoading,
     busy,
     error,
+    startup,
     ready,
     conversationActive,
     prepare,
+    cancelStartup,
     installModels,
     importModelPack,
     exportModelPack,
@@ -61,14 +66,16 @@ function App() {
   const selectedAudioChanged =
     audio !== null &&
     (audio.inputDeviceId !== inputDeviceId || audio.outputDeviceId !== outputDeviceId);
-  const localModelsReady = modelsReady(models);
+  const modelView = modelVerificationView(models, modelsLoading);
+  const localModelsReady = modelView.ready;
+  const startupBusy = startup !== null;
 
   if (loading) {
     return <LoadingScreen />;
   }
 
   return (
-    <main className="app-shell" data-conversation-state={snapshot.state} aria-busy={busy !== null}>
+    <main className="app-shell" data-conversation-state={snapshot.state} aria-busy={busy !== null || startupBusy}>
       <header className="app-header">
         <div className="brand-lockup">
           <img className="brand-mark" src={fastTalkMark} alt="" />
@@ -76,7 +83,7 @@ function App() {
             <strong>FastTalk</strong>
           </div>
         </div>
-        <ReadinessLabel ready={ready} busy={busy} />
+        <ReadinessLabel ready={ready} busy={busy ?? (startupBusy ? "Starting local services" : null)} />
       </header>
 
       {error && (
@@ -139,15 +146,21 @@ function App() {
           <div className="section-heading">
             <div>
               <h2 id="setup-heading">Local setup</h2>
-              <p>{setupSummary(runtime, audio !== null, localModelsReady)}</p>
+              <p>{setupSummary(runtime, audio !== null, localModelsReady, modelsLoading)}</p>
             </div>
-            <SetupCount runtime={runtime} audioReady={audio?.active === true} modelsReady={localModelsReady} />
+            <SetupCount
+              runtime={runtime}
+              audioReady={audio?.active === true}
+              modelsReady={localModelsReady}
+              checkingModels={modelsLoading}
+            />
           </div>
 
           <ModelSetup
             models={models}
+            loading={modelsLoading}
             progress={modelProgress}
-            busy={busy !== null || conversationActive}
+            busy={busy !== null || startupBusy || conversationActive}
             onInstall={() => void installModels()}
             onImport={() => void importModelPack()}
             onExport={() => void exportModelPack()}
@@ -169,14 +182,14 @@ function App() {
               label="Microphone"
               value={inputDeviceId}
               devices={devices.inputs}
-              disabled={conversationActive || busy !== null}
+              disabled={conversationActive || busy !== null || startupBusy}
               onChange={setInputDeviceId}
             />
             <DeviceField
               label="Speakers"
               value={outputDeviceId}
               devices={devices.outputs}
-              disabled={conversationActive || busy !== null}
+              disabled={conversationActive || busy !== null || startupBusy}
               onChange={setOutputDeviceId}
             />
           </div>
@@ -184,7 +197,7 @@ function App() {
           {selectedAudioChanged && (
             <button
               className="text-action"
-              disabled={conversationActive || busy !== null}
+              disabled={conversationActive || busy !== null || startupBusy}
               onClick={() => void restartAudio()}
             >
               Apply audio changes
@@ -194,10 +207,10 @@ function App() {
           {!ready ? (
             <button
               className="button button-setup"
-              disabled={busy !== null || inputDeviceId === null || outputDeviceId === null}
+              disabled={modelsLoading || busy !== null || startupBusy || inputDeviceId === null || outputDeviceId === null}
               onClick={() => void prepare()}
             >
-              Prepare FastTalk
+              {startupBusy ? "Starting local services" : "Prepare FastTalk"}
             </button>
           ) : (
             <button
@@ -207,6 +220,14 @@ function App() {
             >
               Stop local services
             </button>
+          )}
+
+          {startup && (
+            <StartupProgress
+              startup={startup}
+              runtime={runtime}
+              onCancel={() => void cancelStartup()}
+            />
           )}
 
           <Diagnostics runtime={runtime} audio={audio} />
@@ -242,11 +263,16 @@ function SetupCount({
   runtime,
   audioReady,
   modelsReady: modelReady,
+  checkingModels,
 }: {
   runtime: NativeRuntimeStatus;
   audioReady: boolean;
   modelsReady: boolean;
+  checkingModels: boolean;
 }) {
+  if (checkingModels) {
+    return <span className="setup-count" aria-label="Model verification in progress">Checking models</span>;
+  }
   const count = workerList(runtime).filter((worker) => worker.state === "ready").length
     + Number(audioReady)
     + Number(modelReady);
@@ -255,6 +281,7 @@ function SetupCount({
 
 function ModelSetup({
   models,
+  loading,
   progress,
   busy,
   onInstall,
@@ -262,24 +289,30 @@ function ModelSetup({
   onExport,
 }: {
   models: ModelStatus[];
+  loading: boolean;
   progress: ModelProgress | null;
   busy: boolean;
   onInstall: () => void;
   onImport: () => void;
   onExport: () => void;
 }) {
-  const ready = modelsReady(models);
-  const verified = models.filter((model) => model.state === "ready").length;
+  const view = modelVerificationView(models, loading);
   const progressPercent = progress && progress.totalBytes > 0
     ? Math.round((progress.downloadedBytes / progress.totalBytes) * 100)
     : null;
   return (
     <section className="model-setup" aria-label="Local model setup">
       <div className="worker-row">
-        <span className={`semantic-state state-${ready ? "ready" : progress ? "starting" : "stopped"}`} />
+        <span className={`semantic-state state-${progress ? "starting" : view.semanticState}`} />
         <span>Local model files</span>
-        <small>{ready ? "Verified" : `${verified}/${models.length || 5}`}</small>
+        <small>{view.label}</small>
       </div>
+      {loading && !progress && (
+        <div className="model-progress" role="status">
+          <progress />
+          <span>Checking existing files</span>
+        </div>
+      )}
       {progress && (
         <div className="model-progress" role="status">
           <progress value={progress.downloadedBytes} max={progress.totalBytes} />
@@ -287,9 +320,9 @@ function ModelSetup({
         </div>
       )}
       <div className="model-actions">
-        {!ready && <button className="text-action" disabled={busy} onClick={onInstall}>Download models</button>}
-        <button className="text-action" disabled={busy} onClick={onImport}>Import offline pack</button>
-        <button className="text-action" disabled={busy || !ready} onClick={onExport}>Export offline pack</button>
+        {!loading && !view.ready && <button className="text-action" disabled={busy} onClick={onInstall}>Download models</button>}
+        <button className="text-action" disabled={loading || busy} onClick={onImport}>Import offline pack</button>
+        <button className="text-action" disabled={loading || busy || !view.ready} onClick={onExport}>Export offline pack</button>
       </div>
       <details className="model-licenses">
         <summary>Model versions and licenses</summary>
@@ -344,6 +377,49 @@ function DeviceField({
   );
 }
 
+function StartupProgress({
+  startup,
+  runtime,
+  onCancel,
+}: {
+  startup: StartupActivity;
+  runtime: NativeRuntimeStatus;
+  onCancel: () => void;
+}) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - startup.startedAt) / 1_000)),
+  );
+  useEffect(() => {
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startup.startedAt) / 1_000)));
+    update();
+    const interval = window.setInterval(update, 1_000);
+    return () => window.clearInterval(interval);
+  }, [startup.startedAt]);
+
+  const workers = workerList(runtime);
+  const readyWorkers = workers.filter((worker) => worker.state === "ready").length;
+  const detail = startup.phase === "launching"
+    ? "Checking local models and launching worker processes."
+    : startup.phase === "cancelling"
+      ? "Stopping any services that already started."
+      : `${readyWorkers} of 3 services ready. Model weights are loading into memory.`;
+  return (
+    <section className="startup-progress" aria-live="polite">
+      <div>
+        <strong>{startup.phase === "cancelling" ? "Cancelling startup" : "Starting local services"}</strong>
+        <span>{elapsedSeconds}s</span>
+      </div>
+      {startup.phase === "launching" ? <progress /> : <progress value={readyWorkers} max={3} />}
+      <p>{elapsedSeconds >= 30 && startup.phase === "warming"
+        ? "Still working. Large model weights can take time to load; FastTalk should remain responsive."
+        : detail}</p>
+      <button className="text-action" disabled={startup.phase === "cancelling"} onClick={onCancel}>
+        Cancel startup
+      </button>
+    </section>
+  );
+}
+
 function Diagnostics({
   runtime,
   audio,
@@ -355,11 +431,16 @@ function Diagnostics({
   const lines = workers.flatMap((worker) =>
     worker.diagnostics.slice(-4).map((line) => ({ ...line, worker: workerNames[worker.id] ?? worker.id })),
   );
+  const voiceBackend = !runtime.vramAdmission.startupAdmitted
+    ? "Not selected"
+    : runtime.ttsBackend === "magpie"
+      ? "Magpie GPU"
+      : "Kokoro CPU fallback";
   return (
     <details className="diagnostics">
       <summary>Diagnostics</summary>
       <div className="diagnostic-metrics">
-        <Metric label="Voice backend" value={runtime.ttsBackend === "magpie" ? "Magpie GPU" : "Kokoro CPU"} />
+        <Metric label="Voice backend" value={voiceBackend} />
         <Metric
           label="Projected VRAM"
           value={runtime.vramAdmission.projectedWarmedMib == null
@@ -369,12 +450,13 @@ function Diagnostics({
         <Metric label="Queued audio" value={audio ? `${audio.queuedPlaybackSamples} samples` : "Unavailable"} />
         <Metric label="Capture drops" value={String(audio?.droppedCaptureSamples ?? 0)} />
         <Metric label="Playback drops" value={String(audio?.droppedPlaybackSamples ?? 0)} />
-        <Metric label="ASR drops" value={String(audio?.droppedAsrSamples ?? 0)} />
+        <Metric label="ASR queue drops" value={String(audio?.droppedAsrSamples ?? 0)} />
         <Metric
           label="Last interrupt"
           value={audio?.lastCancelToCallbackMs == null ? "Not measured" : `${audio.lastCancelToCallbackMs.toFixed(1)} ms`}
         />
       </div>
+      <p className="diagnostic-note">{runtime.vramAdmission.reason}</p>
       {lines.length > 0 ? (
         <div className="diagnostic-log" aria-label="Recent native worker diagnostics">
           {lines.map((line, index) => (
@@ -411,7 +493,9 @@ function setupSummary(
   runtime: NativeRuntimeStatus,
   audioReady: boolean,
   modelReady: boolean,
+  modelsLoading: boolean,
 ): string {
+  if (modelsLoading) return "Verifying cached model files.";
   if (modelReady && workersReady(runtime) && audioReady) return "Models and Windows audio are ready.";
   if (!modelReady) return "Download or import the verified local model pack.";
   if (workerList(runtime).some((worker) => worker.state === "starting")) return "Loading local models into memory.";

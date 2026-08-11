@@ -35,6 +35,7 @@ function runtimeState(state: WorkerStatus["state"]): NativeRuntimeStatus {
     profileId: "rtx3090-qwen35-q5-magpie",
     ttsBackend: "magpie",
     vramAdmission: {
+      startupAdmitted: state !== "stopped",
       currentUsedMib: 3_143,
       totalMib: 24_576,
       projectedWarmedMib: 12_000,
@@ -175,6 +176,8 @@ export function installDevMock() {
             runtime = runtimeState("ready");
           }, 800);
           return structuredClone(runtime);
+        case "runtime_cancel_start":
+          return null;
         case "runtime_stop":
           runtime = runtimeState("stopped");
           return structuredClone(runtime);

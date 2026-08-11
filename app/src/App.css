@@ -151,6 +151,7 @@ select:disabled {
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.72fr) minmax(310px, 0.78fr);
+  height: calc(100dvh - 116px);
   min-height: calc(100dvh - 116px);
   gap: 16px;
 }
@@ -164,6 +165,7 @@ select:disabled {
 
 .conversation-pane {
   display: flex;
+  min-width: 0;
   min-height: 590px;
   flex-direction: column;
   padding: 30px;
@@ -201,8 +203,8 @@ select:disabled {
 
 .agent-chat {
   display: flex;
-  min-height: 260px;
-  flex: 1;
+  min-height: 0;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 14px;
   margin: 30px -6px 0 0;
@@ -372,6 +374,50 @@ select:disabled {
   margin: 8px 0 -4px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.startup-progress {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+}
+
+.startup-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.startup-progress strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.startup-progress span,
+.startup-progress p {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.startup-progress p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.startup-progress progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent-strong);
+}
+
+.startup-progress .text-action {
+  justify-self: start;
 }
 
 .setup-pane {
@@ -599,6 +645,13 @@ select:disabled {
   text-overflow: ellipsis;
 }
 
+.diagnostic-note {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .diagnostic-log {
   display: grid;
   max-height: 180px;
@@ -679,7 +732,13 @@ select:disabled {
     grid-template-columns: 1fr;
   }
 
+  .workspace-grid {
+    height: auto;
+    min-height: 0;
+  }
+
   .conversation-pane {
+    height: min(720px, calc(100dvh - 36px));
     min-height: 540px;
     padding: 24px;
   }

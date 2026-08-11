@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage, fastTalkApi } from "./bridge";
+import { modelVerificationView } from "./setupPresentation";
 import {
   initialRuntimeStatus,
   initialSnapshot,
@@ -37,6 +38,11 @@ export function workerList(runtime: NativeRuntimeStatus): WorkerStatus[] {
   );
 }
 
+export type StartupActivity = {
+  phase: "launching" | "warming" | "cancelling";
+  startedAt: number;
+};
+
 export function useFastTalk() {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [runtime, setRuntime] = useState(initialRuntimeStatus);
@@ -47,20 +53,32 @@ export function useFastTalk() {
   const [inputDeviceId, setInputDeviceId] = useState<string | null>(null);
   const [outputDeviceId, setOutputDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [startup, setStartup] = useState<StartupActivity | null>(null);
+  const modelStatusRequest = useRef<Promise<ModelStatus[]> | null>(null);
+  const refreshRequest = useRef<Promise<void> | null>(null);
+  const startupCancelled = useRef(false);
 
-  const refreshStatus = useCallback(async () => {
-    const [runtimeResult, audioResult] = await Promise.allSettled([
-      fastTalkApi.runtimeStatus(),
-      fastTalkApi.audioStatus(),
-    ]);
-    if (runtimeResult.status === "fulfilled") {
-      setRuntime(runtimeResult.value);
-    }
-    if (audioResult.status === "fulfilled") {
-      setAudio(audioResult.value);
-    }
+  const refreshStatus = useCallback(() => {
+    if (refreshRequest.current) return refreshRequest.current;
+    const request = (async () => {
+      const [runtimeResult, audioResult] = await Promise.allSettled([
+        fastTalkApi.runtimeStatus(),
+        fastTalkApi.audioStatus(),
+      ]);
+      if (runtimeResult.status === "fulfilled") {
+        setRuntime(runtimeResult.value);
+      }
+      if (audioResult.status === "fulfilled") {
+        setAudio(audioResult.value);
+      }
+    })().finally(() => {
+      refreshRequest.current = null;
+    });
+    refreshRequest.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
@@ -119,11 +137,17 @@ export function useFastTalk() {
       setLoading(false);
     });
 
-    void fastTalkApi.modelStatus().then((next) => {
-      if (!disposed) setModels(next);
-    }).catch((cause) => {
-      if (!disposed) setError(errorMessage(cause));
-    });
+    modelStatusRequest.current ??= fastTalkApi.modelStatus();
+    void modelStatusRequest.current
+      .then((next) => {
+        if (!disposed) setModels(next);
+      })
+      .catch((cause) => {
+        if (!disposed) setError(errorMessage(cause));
+      })
+      .finally(() => {
+        if (!disposed) setModelsLoading(false);
+      });
 
     const interval = window.setInterval(() => void refreshStatus(), 1_000);
     return () => {
@@ -153,6 +177,8 @@ export function useFastTalk() {
   );
 
   const prepare = useCallback(async () => {
+    if (modelsLoading) return;
+    startupCancelled.current = false;
     setBusy("Preparing local services");
     setError(null);
     let currentModels = models;
@@ -164,10 +190,13 @@ export function useFastTalk() {
         setModelProgress(null);
       } catch (cause) {
         setError(errorMessage(cause));
+        setStartup(null);
         setBusy(null);
         return;
       }
     }
+    const startedAt = Date.now();
+    setStartup({ phase: "launching", startedAt });
     setBusy("Starting local services");
     const [runtimeResult, audioResult] = await Promise.allSettled([
       fastTalkApi.runtimeStart(),
@@ -178,9 +207,42 @@ export function useFastTalk() {
     const failures = [runtimeResult, audioResult]
       .filter((result) => result.status === "rejected")
       .map((result) => errorMessage((result as PromiseRejectedResult).reason));
-    if (failures.length > 0) setError(failures.join(" "));
+    if (startupCancelled.current) {
+      setBusy(null);
+      return;
+    }
+    if (failures.length > 0) {
+      const cleanup = await Promise.allSettled([
+        runtimeResult.status === "fulfilled" ? fastTalkApi.runtimeStop() : Promise.resolve(null),
+        audioResult.status === "fulfilled" ? fastTalkApi.audioStop() : Promise.resolve(),
+      ]);
+      const stoppedRuntime = cleanup[0];
+      if (stoppedRuntime.status === "fulfilled" && stoppedRuntime.value) {
+        setRuntime(stoppedRuntime.value);
+      }
+      if (audioResult.status === "fulfilled") setAudio(null);
+      setError(`${failures.join(" ")} Any services that started were stopped. Check diagnostics, then try again.`);
+      setStartup(null);
+    } else {
+      setStartup({ phase: "warming", startedAt });
+    }
     setBusy(null);
-  }, [inputDeviceId, models, outputDeviceId]);
+  }, [inputDeviceId, models, modelsLoading, outputDeviceId]);
+
+  const cancelStartup = useCallback(async () => {
+    startupCancelled.current = true;
+    setStartup((current) => current && { ...current, phase: "cancelling" });
+    setBusy("Cancelling startup");
+    const [, , runtimeResult] = await Promise.allSettled([
+      fastTalkApi.runtimeCancelStart(),
+      fastTalkApi.audioStop(),
+      fastTalkApi.runtimeStop(),
+    ]);
+    if (runtimeResult.status === "fulfilled") setRuntime(runtimeResult.value);
+    setAudio(null);
+    setStartup(null);
+    setBusy(null);
+  }, []);
 
   const installModels = useCallback(
     () => runAction("Downloading and verifying local models", fastTalkApi.modelInstallAll, (next) => {
@@ -257,6 +319,24 @@ export function useFastTalk() {
   );
   const conversationActive = snapshot.state !== "idle";
 
+  useEffect(() => {
+    if (!startup || startup.phase !== "warming") return;
+    if (workersReady(runtime) && audio?.active === true) {
+      setStartup(null);
+      return;
+    }
+    const failed = workerList(runtime).find((worker) => worker.state === "failed");
+    if (!failed) return;
+    const detail = failed.diagnostics[failed.diagnostics.length - 1]?.message
+      ?? "The worker exhausted its restart budget.";
+    setError(`${failed.id} could not start. ${detail} Local services were stopped; review diagnostics and try again.`);
+    setStartup(null);
+    void Promise.allSettled([fastTalkApi.audioStop(), fastTalkApi.runtimeStop()]).then(() => {
+      setAudio(null);
+      void refreshStatus();
+    });
+  }, [audio?.active, refreshStatus, runtime, startup]);
+
   return {
     snapshot,
     runtime,
@@ -269,11 +349,14 @@ export function useFastTalk() {
     setInputDeviceId,
     setOutputDeviceId,
     loading,
+    modelsLoading,
     busy,
     error,
+    startup,
     ready,
     conversationActive,
     prepare,
+    cancelStartup,
     installModels,
     importModelPack,
     exportModelPack,
@@ -288,5 +371,5 @@ export function useFastTalk() {
 }
 
 export function modelsReady(models: ModelStatus[]): boolean {
-  return models.length > 0 && models.every((model) => model.state === "ready");
+  return modelVerificationView(models, false).ready;
 }
