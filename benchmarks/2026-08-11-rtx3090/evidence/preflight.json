@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUnixMs": 1786382479963,
+  "pass": true,
+  "checks": [
+    {
+      "id": "source.artifact",
+      "category": "source",
+      "status": "pass",
+      "expected": "89db5f0734779807e0e84993844bc29ec3ce12042237a191a07b921f244a1f5e",
+      "actual": "89db5f0734779807e0e84993844bc29ec3ce12042237a191a07b921f244a1f5e"
+    },
+    {
+      "id": "os.windows",
+      "category": "platform",
+      "status": "pass",
+      "expected": "Windows build >= 22000",
+      "actual": "26200"
+    },
+    {
+      "id": "gpu.model",
+      "category": "hardware",
+      "status": "pass",
+      "expected": "NVIDIA GeForce RTX 3090",
+      "actual": "NVIDIA GeForce RTX 3090"
+    },
+    {
+      "id": "gpu.memory",
+      "category": "hardware",
+      "status": "pass",
+      "expected": ">= 24576 MiB",
+      "actual": "24576 MiB total, 21461 MiB free"
+    },
+    {
+      "id": "gpu.compute",
+      "category": "hardware",
+      "status": "pass",
+      "expected": "8.6",
+      "actual": "8.6"
+    },
+    {
+      "id": "tool.cuda",
+      "category": "toolchain",
+      "status": "pass",
+      "expected": "CUDA Toolkit 13.3",
+      "actual": "nvcc: NVIDIA (R) Cuda compiler driver\r\nCopyright (c) 2005-2026 NVIDIA Corporation\r\nBuilt on Tue_Jun__9_14:30:19_Pacific_Daylight_Time_2026\r\nCuda compilation tools, release 13.3, V13.3.73\r\nBuild cuda_13.3.r13.3/compiler.38244171_0"
+    },
+    {
+      "id": "tool.cmake",
+      "category": "toolchain",
+      "status": "pass",
+      "expected": "version 3.30.x",
+      "actual": "cmake version 3.30.4\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake)."
+    },
+    {
+      "id": "tool.ninja",
+      "category": "toolchain",
+      "status": "pass",
+      "expected": "version 1.13.x",
+      "actual": "1.13.2"
+    },
+    {
+      "id": "tool.rust",
+      "category": "toolchain",
+      "status": "pass",
+      "expected": "latest stable Rust on x86_64-pc-windows-msvc",
+      "actual": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.1\nLLVM version: 22.1.6"
+    },
+    {
+      "id": "tool.visual-studio",
+      "category": "toolchain",
+      "status": "pass",
+      "expected": "Visual Studio 2022 v143 C++ Build Tools",
+      "actual": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools"
+    },
+    {
+      "id": "runtime.nemo-speech",
+      "category": "runtime",
+      "status": "pass",
+      "expected": "nemo-speech.exe",
+      "actual": ".\\runtime/asr/nemo-speech.exe (smoke test passed)"
+    },
+    {
+      "id": "runtime.llama-server",
+      "category": "runtime",
+      "status": "pass",
+      "expected": "llama-server.exe",
+      "actual": ".\\runtime/llm/llama-server.exe (smoke test passed)"
+    },
+    {
+      "id": "model.qwen3.6-27b-q4-k-m",
+      "category": "model",
+      "status": "pass",
+      "expected": "Qwen3.6-27B-Q4_K_M.gguf",
+      "actual": ".\\.cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf"
+    },
+    {
+      "id": "model.nemotron-3.5-asr-streaming-0.6b-q8",
+      "category": "model",
+      "status": "pass",
+      "expected": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "actual": ".\\.cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+    },
+    {
+      "id": "model.magpie-tts-v2602-f16",
+      "category": "model",
+      "status": "pass",
+      "expected": "magpie_tts_multilingual_357m.v2602.f16.gguf",
+      "actual": ".\\.cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"
+    },
+    {
+      "id": "model.kokoro-82m",
+      "category": "model",
+      "status": "pass",
+      "expected": "model_q8f16.onnx",
+      "actual": ".\\.cache/models/kokoro-82m/model_q8f16.onnx"
+    }
+  ]
+}

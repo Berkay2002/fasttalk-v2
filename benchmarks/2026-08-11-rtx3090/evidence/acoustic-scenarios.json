@@ -1,0 +1,38 @@
+[
+  {
+    "fixture": "quiet-speech.wav",
+    "transcript": "Could you please lower the lights in this room?",
+    "endOfSpeechToFirstAudioMs": 1140.621,
+    "asrPartialMaximumMs": 31.229
+  },
+  {
+    "fixture": "hesitation.wav",
+    "transcript": "Sum I think we should wait for a moment before deciding.",
+    "endOfSpeechToFirstAudioMs": 1221.819,
+    "asrPartialMaximumMs": 12.679
+  },
+  {
+    "fixture": "short-acknowledgement.wav",
+    "transcript": "Yes",
+    "endOfSpeechToFirstAudioMs": 1099.961,
+    "asrPartialMaximumMs": 8.509
+  },
+  {
+    "fixture": "long-question.wav",
+    "transcript": "Could you explain how a local voice assistant keeps the microphone transcription language model and speech synthesis private while still responding quickly?",
+    "endOfSpeechToFirstAudioMs": 1493.194,
+    "asrPartialMaximumMs": 19.684
+  },
+  {
+    "fixture": "background-noise.wav",
+    "transcript": "Please tell me whether the train will arrive before noon.",
+    "endOfSpeechToFirstAudioMs": 1058.18,
+    "asrPartialMaximumMs": 13.634
+  },
+  {
+    "fixture": "speaker-playback.wav",
+    "transcript": "Can you hear my question clearly ask not what your country can do for you? Ask what you can do for your country.",
+    "endOfSpeechToFirstAudioMs": 1176.184,
+    "asrPartialMaximumMs": 21.148
+  }
+]

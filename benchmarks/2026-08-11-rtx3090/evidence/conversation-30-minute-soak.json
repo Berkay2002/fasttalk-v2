@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "prerecordedAudio": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\app\\src-tauri\\../..\\.cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav",
+  "turns": 1,
+  "ttsBackend": "magpie",
+  "transcripts": [
+    "And so my fellow Americans ask not what your country can do for you. Ask what you can do for your country."
+  ],
+  "firstClauses": [
+    "This is a famous quote by John F."
+  ],
+  "endOfSpeechToFirstAudioMs": [
+    773.195
+  ],
+  "warmLlmFirstTokenMs": [
+    185.258
+  ],
+  "asrPartialUpdateMs": [
+    8.023,
+    11.819,
+    12.497,
+    8.387,
+    11.337,
+    11.681,
+    10.681,
+    12.278,
+    11.905,
+    15.197,
+    15.817,
+    13.572,
+    17.399,
+    16.944,
+    14.546,
+    19.45,
+    14.512,
+    18.022,
+    20.11,
+    16.074,
+    16.622,
+    16.451,
+    15.958,
+    16.761,
+    13.875,
+    17.027,
+    17.335
+  ],
+  "bargeInToSilenceMs": [],
+  "warmedGpuMemoryMib": [
+    12003.0
+  ],
+  "soak": {
+    "requestedMinutes": 30.0,
+    "durationMinutes": 30.208,
+    "completedTurns": 124,
+    "oomCount": 0,
+    "workerFailureCount": 0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "baselineGpuMemoryMiB": 2866.0,
+  "warmedGpuMemoryMiB": 22450.0,
+  "combinedWorkerGpuMemoryMiB": 19584.0,
+  "speechReady": {
+    "capabilities": [
+      "asr",
+      "tts"
+    ],
+    "device": "auto",
+    "ready": true
+  }
+}

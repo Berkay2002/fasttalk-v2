@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen3.5-9b-q5-k-m-16k-non-thinking-with-asr",
+  "llamaModel": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "speechProfile": "asr-only",
+  "baselineGpuMemoryMiB": 3169.0,
+  "warmedGpuMemoryMiB": 11071.0,
+  "combinedWorkerGpuMemoryMiB": 7902.0,
+  "speechReady": {
+    "capabilities": [
+      "asr"
+    ],
+    "device": "auto",
+    "ready": true
+  }
+}

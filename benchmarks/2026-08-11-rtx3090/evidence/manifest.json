@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "runId": "2026-08-11-rtx3090",
+  "sourceCommit": "9c03c52131686351399589e2a4509b0de00ef4ea",
+  "files": [
+    {
+      "file": "preflight.json",
+      "source": "artifacts/feasibility/preflight.json",
+      "bytes": 3796,
+      "sha256": "63875d7a695d4adb14386e354f3192056fdb7a9602bfcf0970962ec4c053047e"
+    },
+    {
+      "file": "asr.json",
+      "source": "artifacts/feasibility/asr-benchmark.json",
+      "bytes": 439,
+      "sha256": "696e37ae08338c07ecdd172e8a57bfdacd4e5cf10baf4f6ba12afad325613c44"
+    },
+    {
+      "file": "qwen36-llm.json",
+      "source": "artifacts/feasibility/llama-benchmark.json",
+      "bytes": 530,
+      "sha256": "ba57f45cd70c5f798771d1e46073e198e1bc414869fb587b0c9f1d13a30e5a24"
+    },
+    {
+      "file": "magpie-buffered.json",
+      "source": "artifacts/feasibility/magpie-benchmark.json",
+      "bytes": 941,
+      "sha256": "992e03a64591a9bb3ca70ac8519da1ec6ec7c37feac372b39cbe692e6b12dd98"
+    },
+    {
+      "file": "magpie-streaming.json",
+      "source": "artifacts/feasibility/magpie-streaming-benchmark.json",
+      "bytes": 276,
+      "sha256": "9a9288ffdb3af6d94cfa54a83872e40bd5bdf8eba48e298c4e4ec68f0922108c"
+    },
+    {
+      "file": "magpie-streaming-transport.json",
+      "source": "artifacts/feasibility/magpie-streaming-transport.json",
+      "bytes": 9760,
+      "sha256": "c09e51ca79e9f5e1e3047702576570289e104e553c7df02af7cfd5158f01679e"
+    },
+    {
+      "file": "kokoro-v1.json",
+      "source": "artifacts/feasibility/kokoro-v1-bundle-smoke.json",
+      "bytes": 275,
+      "sha256": "db6353db007b1b64d768c5c32806b6a6d490073d40bdcf6a91f784b97c7ca3fc"
+    },
+    {
+      "file": "kokoro-compact.json",
+      "source": "artifacts/feasibility/kokoro-fallback-transport.json",
+      "bytes": 275,
+      "sha256": "17ce55c63bba436aea3b677d0e452185c58ddca49aec55b3ac53347d6a27a55d"
+    },
+    {
+      "file": "qwen36-combined-vram.json",
+      "source": "artifacts/feasibility/combined-vram.json",
+      "bytes": 265,
+      "sha256": "7064a4ed17c425399a693b179a5eb3d85a2b0651098b30f7aad4eb5420dd1088"
+    },
+    {
+      "file": "qwen36-pipeline-evidence.json",
+      "source": "artifacts/feasibility/measured-evidence.json",
+      "bytes": 2591,
+      "sha256": "6b8662a7d54b6f533a2d90fbc2dbdf0454fba771d1ac25245ab670a0821680fb"
+    },
+    {
+      "file": "qwen36-pipeline-gates.json",
+      "source": "artifacts/feasibility/measured-report.json",
+      "bytes": 2783,
+      "sha256": "2de4fb18787889e4e2d5eeaebf61d4d8b5fad0db7cfb851d617372fbbff5d651"
+    },
+    {
+      "file": "qwen35-llm.json",
+      "source": "artifacts/release/qwen3.5-benchmark.json",
+      "bytes": 506,
+      "sha256": "00fa7599c109137754a4752d92922ef57ae32b3183e80b9526aa804a4244ff9f"
+    },
+    {
+      "file": "qwen35-asr-vram.json",
+      "source": "artifacts/release/qwen3.5-asr-vram.json",
+      "bytes": 411,
+      "sha256": "049ab2f399353cb53c2d642c0cb01adee45751f52f78aae0ddfea4e35dc396fc"
+    },
+    {
+      "file": "qwen35-combined-vram.json",
+      "source": "artifacts/release/qwen3.5-combined-vram.json",
+      "bytes": 396,
+      "sha256": "6ae87cd5eaf23ec1f7933b10df1379316e8c4c0d564402eba2847a0347a5d0e3"
+    },
+    {
+      "file": "conversation-20-turn.json",
+      "source": "artifacts/release/conversation-benchmark.json",
+      "bytes": 11499,
+      "sha256": "29889fbc119a7c30ac121e82ee22c8f4e336368e0a8ae9a5291e5ffd126ba137"
+    },
+    {
+      "file": "acoustic-scenarios.json",
+      "source": "artifacts/release/acoustic-scenarios/summary.json",
+      "bytes": 1344,
+      "sha256": "22a7bc693051186997011b228993edbf1f48e0ebd61567f765e7f9970eddc371"
+    },
+    {
+      "file": "conversation-30-minute-soak.json",
+      "source": "artifacts/release/conversation-soak.json",
+      "bytes": 1091,
+      "sha256": "ee56087795f4b4b2465f229210fc5a13395df8fb7794b6e60da01bac4c0c012a"
+    },
+    {
+      "file": "release-gates.json",
+      "source": "artifacts/release/gate-report.json",
+      "bytes": 3289,
+      "sha256": "823692b606c80bd9d7a6e64e650cfbf0ef469f27b1042fa46ce29aed2ebcc725"
+    }
+  ]
+}

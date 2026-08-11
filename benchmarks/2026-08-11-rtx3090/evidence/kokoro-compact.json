@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "backend": "kokoro-82m-int8-cpu",
+  "transport": "phrase-level-pcm",
+  "sampleRate": 24000,
+  "speakers": 11,
+  "responseHeadersMs": 0.794,
+  "firstPcmMs": 5106.072,
+  "completedMs": 5107.805,
+  "readCount": 54,
+  "pcmBytes": 221104.0
+}
