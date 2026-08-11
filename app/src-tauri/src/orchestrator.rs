@@ -1,4 +1,6 @@
-use crate::native::PreferredTtsBackend;
+use crate::native::{
+    KOKORO_BASE_URL, LLM_BASE_URL, PreferredTtsBackend, SPEECH_BASE_URL, SPEECH_REALTIME_URL,
+};
 use crate::smart_turn::SmartTurnDetector;
 use fasttalk_audio::AudioEngine;
 use fasttalk_conversation::{
@@ -92,7 +94,7 @@ async fn run(
     tts_backend: PreferredTtsBackend,
     mut turn_detector: SmartTurnDetector,
 ) -> Result<(), PipelineError> {
-    let asr = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime")?;
+    let asr = RealtimeAsrClient::new(SPEECH_REALTIME_URL)?;
     let (mut asr_sender, mut asr_receiver) = asr.connect().await?;
     let history = Arc::new(Mutex::new(SessionHistory::new(12)));
     let mut activity = VoiceActivity::default();
@@ -254,7 +256,7 @@ async fn run_turn(
     tts_backend: PreferredTtsBackend,
 ) -> Result<(), PipelineError> {
     let messages = chat_messages(history)?;
-    let llm = LlmClient::new("http://127.0.0.1:18080")?;
+    let llm = LlmClient::new(LLM_BASE_URL)?;
     let (events, mut receiver) = mpsc::channel(64);
     let llm_cancellation = cancellation.clone();
     let llm_task = tauri::async_runtime::spawn(async move {
@@ -377,12 +379,12 @@ async fn synthesize_with_backend(
     let task = tauri::async_runtime::spawn(async move {
         match backend {
             TtsBackend::Magpie => {
-                MagpieClient::new("http://127.0.0.1:18081")?
+                MagpieClient::new(SPEECH_BASE_URL)?
                     .synthesize(&text, tts_cancellation, events)
                     .await
             }
             TtsBackend::Kokoro => {
-                KokoroClient::new("http://127.0.0.1:18082")?
+                KokoroClient::new(KOKORO_BASE_URL)?
                     .synthesize(&text, tts_cancellation, events)
                     .await
             }

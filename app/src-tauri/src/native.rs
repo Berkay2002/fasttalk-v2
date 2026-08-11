@@ -8,9 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const LLM_PORT: u16 = 18_080;
-const SPEECH_PORT: u16 = 18_081;
-const KOKORO_PORT: u16 = 18_082;
+pub const LLM_PORT: u16 = 18_080;
+pub const SPEECH_PORT: u16 = 18_081;
+pub const KOKORO_PORT: u16 = 18_082;
+pub const LLM_BASE_URL: &str = "http://127.0.0.1:18080";
+pub const SPEECH_BASE_URL: &str = "http://127.0.0.1:18081";
+pub const SPEECH_REALTIME_URL: &str = "ws://127.0.0.1:18081/v1/realtime";
+pub const KOKORO_BASE_URL: &str = "http://127.0.0.1:18082";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -243,6 +247,7 @@ impl NativeRuntime {
         let model = &self.models.qwen;
         let context_size = self.profile.llm.context_size.to_string();
         let parallel = self.profile.llm.parallel.to_string();
+        let port = LLM_PORT.to_string();
         let arguments = os_arguments([
             "--model",
             path_text(model)?,
@@ -259,7 +264,7 @@ impl NativeRuntime {
             "--host",
             "127.0.0.1",
             "--port",
-            "18080",
+            &port,
             "--no-webui",
             "--metrics",
         ]);
@@ -294,6 +299,7 @@ impl NativeRuntime {
         let tts = &self.models.magpie;
         let codec = &self.models.nanocodec;
         let tokenizer = &self.models.magpie_tokenizer;
+        let port = SPEECH_PORT.to_string();
         let mut arguments = os_arguments([
             "serve",
             "--asr-model",
@@ -301,7 +307,7 @@ impl NativeRuntime {
             "--host",
             "127.0.0.1",
             "--port",
-            "18081",
+            &port,
             "--no-ui",
         ]);
         if self.vram_admission.backend == PreferredTtsBackend::Magpie {
@@ -342,13 +348,14 @@ impl NativeRuntime {
     fn build_kokoro(&self) -> Result<WorkerSupervisor, SupervisorError> {
         let executable = self.root.join("runtime/tts/kokoro-worker.exe");
         let model_dir = &self.models.kokoro;
+        let port = KOKORO_PORT.to_string();
         let arguments = os_arguments([
             "--model-dir",
             path_text(model_dir)?,
             "--host",
             "127.0.0.1",
             "--port",
-            "18082",
+            &port,
             "--threads",
             "4",
         ]);
@@ -652,7 +659,7 @@ mod tests {
         assert!(!clauses.is_empty());
         assert!(llm_warm_first_delta_ms <= 900.0);
 
-        let tts = MagpieClient::new("http://127.0.0.1:18081").unwrap();
+        let tts = MagpieClient::new(SPEECH_BASE_URL).unwrap();
         let (tts_tx, mut tts_rx) = mpsc::channel(64);
         let tts_started = Instant::now();
         let tts_task = tokio::spawn(async move {
@@ -678,7 +685,7 @@ mod tests {
         tts_task.await.unwrap().unwrap();
         assert!(pcm_samples > 24_000);
 
-        let kokoro = KokoroClient::new("http://127.0.0.1:18082").unwrap();
+        let kokoro = KokoroClient::new(KOKORO_BASE_URL).unwrap();
         let (kokoro_tx, mut kokoro_rx) = mpsc::channel(64);
         let kokoro_started = Instant::now();
         let kokoro_task = tokio::spawn(async move {
@@ -741,7 +748,7 @@ mod tests {
             .samples::<i16>()
             .map(|sample| sample.unwrap() as f32 / 32768.0)
             .collect::<Vec<_>>();
-        let client = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime").unwrap();
+        let client = RealtimeAsrClient::new(SPEECH_REALTIME_URL).unwrap();
         let (mut sender, mut receiver) = client.connect().await.unwrap();
         let receive_task = tokio::spawn(async move {
             let mut final_transcript = None;
@@ -767,7 +774,7 @@ mod tests {
     }
 
     async fn exercise_llm(prompt: &str) -> (String, Vec<String>, f64) {
-        let llm = LlmClient::new("http://127.0.0.1:18080").unwrap();
+        let llm = LlmClient::new(LLM_BASE_URL).unwrap();
         let (events, mut receiver) = mpsc::channel(64);
         let started = Instant::now();
         let prompt = prompt.to_owned();

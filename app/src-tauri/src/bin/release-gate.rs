@@ -1,4 +1,7 @@
-use fasttalk_app_lib::native::{NativeRuntime, NativeRuntimeStatus, PreferredTtsBackend};
+use fasttalk_app_lib::native::{
+    KOKORO_BASE_URL, LLM_BASE_URL, NativeRuntime, NativeRuntimeStatus, PreferredTtsBackend,
+    SPEECH_BASE_URL, SPEECH_REALTIME_URL,
+};
 use fasttalk_audio::{AudioConfig, AudioEngine};
 use fasttalk_pipeline::{
     AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
@@ -292,7 +295,7 @@ async fn measure_turn(
     backend: PreferredTtsBackend,
 ) -> Result<TurnMeasurement, String> {
     let transcription = transcribe(audio).await?;
-    let llm = LlmClient::new("http://127.0.0.1:18080").map_err(|error| error.to_string())?;
+    let llm = LlmClient::new(LLM_BASE_URL).map_err(|error| error.to_string())?;
     let (llm_tx, mut llm_rx) = mpsc::channel(128);
     let llm_started = Instant::now();
     let cancellation = CancellationToken::new();
@@ -420,8 +423,7 @@ fn spawn_tts(
 ) -> Result<tokio::task::JoinHandle<Result<(), String>>, String> {
     match backend {
         PreferredTtsBackend::Magpie => {
-            let client =
-                MagpieClient::new("http://127.0.0.1:18081").map_err(|error| error.to_string())?;
+            let client = MagpieClient::new(SPEECH_BASE_URL).map_err(|error| error.to_string())?;
             Ok(tokio::spawn(async move {
                 client
                     .synthesize(&text, cancellation, events)
@@ -430,8 +432,7 @@ fn spawn_tts(
             }))
         }
         PreferredTtsBackend::Kokoro => {
-            let client =
-                KokoroClient::new("http://127.0.0.1:18082").map_err(|error| error.to_string())?;
+            let client = KokoroClient::new(KOKORO_BASE_URL).map_err(|error| error.to_string())?;
             Ok(tokio::spawn(async move {
                 client
                     .synthesize(&text, cancellation, events)
@@ -443,8 +444,7 @@ fn spawn_tts(
 }
 
 async fn transcribe(audio: &RecordedAudio) -> Result<Transcription, String> {
-    let client = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime")
-        .map_err(|error| error.to_string())?;
+    let client = RealtimeAsrClient::new(SPEECH_REALTIME_URL).map_err(|error| error.to_string())?;
     let (mut sender, mut receiver) = client.connect().await.map_err(|error| error.to_string())?;
     loop {
         match receiver.next_event().await {

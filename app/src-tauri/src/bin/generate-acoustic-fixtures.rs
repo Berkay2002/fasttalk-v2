@@ -1,3 +1,4 @@
+use fasttalk_app_lib::native::KOKORO_BASE_URL;
 use fasttalk_pipeline::{CancellationToken, KokoroClient, TtsEvent};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,7 +61,7 @@ async fn run() -> Result<(), String> {
 }
 
 async fn synthesize(text: &str) -> Result<Vec<f32>, String> {
-    let client = KokoroClient::new("http://127.0.0.1:18082").map_err(|error| error.to_string())?;
+    let client = KokoroClient::new(KOKORO_BASE_URL).map_err(|error| error.to_string())?;
     let (sender, mut receiver) = mpsc::channel(32);
     let input = text.to_owned();
     let task = tokio::spawn(async move {
