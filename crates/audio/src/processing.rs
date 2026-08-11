@@ -8,6 +8,40 @@ pub const ASR_SAMPLE_RATE: u32 = 16_000;
 pub const DEVICE_FRAME_SAMPLES: usize = (DEVICE_SAMPLE_RATE / 100) as usize;
 pub const ASR_FRAME_SAMPLES: usize = (ASR_SAMPLE_RATE / 100) as usize;
 
+pub struct ProcessedCaptureFrame {
+    pub asr_samples: [f32; ASR_FRAME_SAMPLES],
+    pub speech_active: bool,
+}
+
+pub struct CaptureProcessor {
+    aec: AecProcessor,
+    detector: SpeechDetector,
+}
+
+impl CaptureProcessor {
+    pub fn new(stream_delay_ms: i32, vad_model_path: Option<&Path>) -> Result<Self, String> {
+        Ok(Self {
+            aec: AecProcessor::new(stream_delay_ms)?,
+            detector: SpeechDetector::new(vad_model_path)?,
+        })
+    }
+
+    pub fn process(
+        &mut self,
+        capture: &[f32; DEVICE_FRAME_SAMPLES],
+        playback_reference: &[f32; DEVICE_FRAME_SAMPLES],
+    ) -> Result<ProcessedCaptureFrame, String> {
+        let mut asr_samples = [0.0; ASR_FRAME_SAMPLES];
+        self.aec
+            .process(capture, playback_reference, &mut asr_samples)?;
+        let speech_active = self.detector.update(&asr_samples);
+        Ok(ProcessedCaptureFrame {
+            asr_samples,
+            speech_active,
+        })
+    }
+}
+
 pub struct AecProcessor {
     processing: AudioProcessing,
     render_output: [f32; DEVICE_FRAME_SAMPLES],
@@ -114,7 +148,7 @@ impl SpeechDetector {
                 let config = VadModelConfig {
                     silero_vad: SileroVadModelConfig {
                         model: Some(path.to_string_lossy().into_owned()),
-                        threshold: 0.5,
+                        threshold: 0.35,
                         min_silence_duration: 0.1,
                         min_speech_duration: 0.03,
                         window_size: 512,

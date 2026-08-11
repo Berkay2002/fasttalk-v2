@@ -2,8 +2,9 @@ mod processing;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
-use processing::{
-    ASR_FRAME_SAMPLES, AecProcessor, DEVICE_FRAME_SAMPLES, DEVICE_SAMPLE_RATE, SpeechDetector,
+pub use processing::{
+    ASR_FRAME_SAMPLES, ASR_SAMPLE_RATE, CaptureProcessor, DEVICE_FRAME_SAMPLES, DEVICE_SAMPLE_RATE,
+    ProcessedCaptureFrame,
 };
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
@@ -470,16 +471,8 @@ fn run_processor(
     stream_delay_ms: i32,
     vad_model_path: Option<PathBuf>,
 ) {
-    let mut processor = match AecProcessor::new(stream_delay_ms) {
+    let mut processor = match CaptureProcessor::new(stream_delay_ms, vad_model_path.as_deref()) {
         Ok(processor) => processor,
-        Err(error) => {
-            shared.record_error(error);
-            shared.running.store(false, Ordering::Release);
-            return;
-        }
-    };
-    let mut detector = match SpeechDetector::new(vad_model_path.as_deref()) {
-        Ok(detector) => detector,
         Err(error) => {
             shared.record_error(error);
             shared.running.store(false, Ordering::Release);
@@ -488,7 +481,6 @@ fn run_processor(
     };
     let mut capture = [0.0; DEVICE_FRAME_SAMPLES];
     let mut reference = [0.0; DEVICE_FRAME_SAMPLES];
-    let mut output = [0.0; ASR_FRAME_SAMPLES];
 
     while shared.running.load(Ordering::Acquire) {
         if capture_consumer.occupied_len() < DEVICE_FRAME_SAMPLES {
@@ -503,18 +495,22 @@ fn run_processor(
             reference_consumer.skip(reference_backlog - maximum_reference_backlog);
         }
         reference_consumer.pop_slice(&mut reference);
-        if let Err(error) = processor.process(&capture, &reference, &mut output) {
-            shared.record_error(error);
-            shared.running.store(false, Ordering::Release);
-            break;
-        }
+        let output = match processor.process(&capture, &reference) {
+            Ok(output) => output,
+            Err(error) => {
+                shared.record_error(error);
+                shared.running.store(false, Ordering::Release);
+                break;
+            }
+        };
         shared
             .speech_active
-            .store(detector.update(&output), Ordering::Release);
-        let accepted = asr_producer.push_slice(&output);
-        shared
-            .dropped_asr
-            .fetch_add((output.len() - accepted) as u64, Ordering::Relaxed);
+            .store(output.speech_active, Ordering::Release);
+        let accepted = asr_producer.push_slice(&output.asr_samples);
+        shared.dropped_asr.fetch_add(
+            (output.asr_samples.len() - accepted) as u64,
+            Ordering::Relaxed,
+        );
     }
 }
 

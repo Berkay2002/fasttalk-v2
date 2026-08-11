@@ -2,7 +2,7 @@ use fasttalk_app_lib::native::{
     KOKORO_BASE_URL, LLM_BASE_URL, NativeRuntime, NativeRuntimeStatus, PreferredTtsBackend,
     SPEECH_BASE_URL, SPEECH_REALTIME_URL,
 };
-use fasttalk_audio::{AudioConfig, AudioEngine};
+use fasttalk_audio::{AudioConfig, AudioEngine, CaptureProcessor, DEVICE_FRAME_SAMPLES};
 use fasttalk_pipeline::{
     AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
     RealtimeAsrClient, TtsEvent,
@@ -20,6 +20,8 @@ use tokio::time::{sleep, timeout};
 
 const ASR_SAMPLE_RATE: usize = 16_000;
 const ASR_CHUNK_SAMPLES: usize = 2_560;
+const ACTIVITY_FRAME_SAMPLES: usize = ASR_SAMPLE_RATE / 100;
+const ACTIVITY_RMS_THRESHOLD: f32 = 0.015;
 const READY_TIMEOUT: Duration = Duration::from_secs(300);
 const TURN_TIMEOUT: Duration = Duration::from_secs(90);
 
@@ -84,6 +86,7 @@ fn value(arguments: &mut impl Iterator<Item = String>, name: &str) -> Result<Str
 struct RecordedAudio {
     path: PathBuf,
     samples: Vec<f32>,
+    first_active_sample: usize,
     last_active_sample: usize,
 }
 
@@ -131,6 +134,7 @@ struct ConversationEvidence {
     warm_llm_first_token_ms: Vec<f64>,
     asr_partial_update_ms: Vec<f64>,
     barge_in_to_silence_ms: Vec<f64>,
+    barge_in_measurement_scope: String,
     warmed_gpu_memory_mib: Vec<f64>,
     soak: SoakEvidence,
 }
@@ -158,7 +162,8 @@ async fn run() -> Result<(), String> {
     );
     let audio = load_recorded_audio(&audio_path)?;
     let mut runtime = NativeRuntime::for_development_checkout();
-    let result = run_with_runtime(&args, &audio, &mut runtime).await;
+    let vad_model_path = workspace.join(&runtime.profile().vad.legacy_path);
+    let result = run_with_runtime(&args, &audio, &vad_model_path, &mut runtime).await;
     if let Err(error) = &result {
         match runtime.poll() {
             Ok(status) => eprintln!("native status after failure ({error}): {status:?}"),
@@ -176,6 +181,7 @@ async fn run() -> Result<(), String> {
 async fn run_with_runtime(
     args: &Args,
     audio: &RecordedAudio,
+    vad_model_path: &Path,
     runtime: &mut NativeRuntime,
 ) -> Result<(), String> {
     let status = wait_for_workers(runtime).await?;
@@ -192,6 +198,7 @@ async fn run_with_runtime(
         warm_llm_first_token_ms: Vec::with_capacity(args.turns),
         asr_partial_update_ms: Vec::new(),
         barge_in_to_silence_ms: Vec::new(),
+        barge_in_measurement_scope: "prerecorded speech onset through production AEC and Silero VAD, cancellation dispatch, and WASAPI output callback acknowledgement".to_owned(),
         warmed_gpu_memory_mib: Vec::new(),
         soak: SoakEvidence {
             requested_minutes: args.soak_minutes,
@@ -240,7 +247,8 @@ async fn run_with_runtime(
     }
 
     if !args.skip_audio {
-        evidence.barge_in_to_silence_ms = measure_barge_in(&playback_fixture, args.turns)?;
+        evidence.barge_in_to_silence_ms =
+            measure_barge_in(audio, &playback_fixture, vad_model_path, args.turns)?;
     }
     if args.soak_minutes > 0.0 {
         evidence.soak = run_soak(audio, status.tts_backend, runtime, args.soak_minutes).await;
@@ -513,29 +521,79 @@ async fn transcribe(audio: &RecordedAudio) -> Result<Transcription, String> {
     })
 }
 
-fn measure_barge_in(samples: &[f32], repetitions: usize) -> Result<Vec<f64>, String> {
-    if samples.is_empty() {
+fn measure_barge_in(
+    speech: &RecordedAudio,
+    playback: &[f32],
+    vad_model_path: &Path,
+    repetitions: usize,
+) -> Result<Vec<f64>, String> {
+    if playback.is_empty() {
         return Err("barge-in fixture contains no PCM".to_owned());
     }
-    let mut engine =
-        AudioEngine::start(AudioConfig::default()).map_err(|error| error.to_string())?;
+    let mut engine = AudioEngine::start(AudioConfig {
+        vad_model_path: Some(vad_model_path.to_path_buf()),
+        ..AudioConfig::default()
+    })
+    .map_err(|error| error.to_string())?;
     let mut fixture = Vec::with_capacity(96_000);
     while fixture.len() < 96_000 {
-        fixture.extend_from_slice(samples);
+        fixture.extend_from_slice(playback);
     }
     fixture.truncate(96_000);
     let mut measurements = Vec::with_capacity(repetitions);
     for _ in 0..repetitions {
+        let mut processor = CaptureProcessor::new(40, Some(vad_model_path))?;
         let accepted = engine.queue_playback_partial(&fixture);
         if accepted < 24_000 {
             return Err(format!("audio queue accepted only {accepted} samples"));
         }
         std::thread::sleep(Duration::from_millis(100));
-        engine.cancel_playback();
+        let pre_roll = ASR_SAMPLE_RATE / 10;
+        let start_sample = speech.first_active_sample.saturating_sub(pre_roll);
+        let mut speech_onset = None;
+        let mut reference_offset = 0;
+        let cancellation = CancellationToken::new();
+        let mut detected = false;
+        for source_start in (start_sample..speech.samples.len()).step_by(ASR_SAMPLE_RATE / 100) {
+            let source_end = (source_start + ASR_SAMPLE_RATE / 100).min(speech.samples.len());
+            if speech_onset.is_none()
+                && (source_start..source_end).contains(&speech.first_active_sample)
+            {
+                speech_onset = Some(Instant::now());
+            }
+            let mut reference = [0.0; DEVICE_FRAME_SAMPLES];
+            let mut capture = [0.0; DEVICE_FRAME_SAMPLES];
+            for index in 0..DEVICE_FRAME_SAMPLES {
+                reference[index] = fixture[(reference_offset + index) % fixture.len()];
+                let source_index = source_start + index / 3;
+                let foreground = speech
+                    .samples
+                    .get(source_index)
+                    .copied()
+                    .unwrap_or_default();
+                capture[index] = foreground + reference[index] * 0.15;
+            }
+            reference_offset = (reference_offset + DEVICE_FRAME_SAMPLES) % fixture.len();
+            let frame = processor.process(&capture, &reference)?;
+            if frame.speech_active {
+                cancellation.cancel();
+                engine.cancel_playback();
+                detected = true;
+                break;
+            }
+            if speech_onset.is_some() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        if !detected || !cancellation.is_cancelled() {
+            return Err("Silero did not detect the prerecorded barge-in speech".to_owned());
+        }
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
-            if let Some(latency) = engine.status().last_cancel_to_callback_ms {
-                measurements.push(round3(latency));
+            if engine.status().last_cancel_to_callback_ms.is_some() {
+                let onset = speech_onset
+                    .ok_or_else(|| "barge-in speech onset was not observed".to_owned())?;
+                measurements.push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
                 break;
             }
             if Instant::now() >= deadline {
@@ -606,17 +664,34 @@ fn load_recorded_audio(path: &Path) -> Result<RecordedAudio, String> {
         .map(|sample| sample.map(|value| value as f32 / i16::MAX as f32))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
-    let last_active_sample = samples
-        .iter()
-        .rposition(|sample| sample.abs() >= 0.01)
-        .ok_or_else(|| {
-            "prerecorded audio contains no samples above the speech threshold".to_owned()
-        })?;
+    let (first_active_sample, last_active_sample) = active_speech_bounds(&samples)
+        .ok_or_else(|| "prerecorded audio contains no active speech frames".to_owned())?;
     Ok(RecordedAudio {
         path: path.to_path_buf(),
         samples,
+        first_active_sample,
         last_active_sample,
     })
+}
+
+fn active_speech_bounds(samples: &[f32]) -> Option<(usize, usize)> {
+    let active_frames = samples
+        .chunks(ACTIVITY_FRAME_SAMPLES)
+        .enumerate()
+        .filter(|(_, frame)| frame_rms(frame) >= ACTIVITY_RMS_THRESHOLD)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let first_active_frame = active_frames.first().copied()?;
+    let last_active_frame = active_frames.last().copied()?;
+    let first_active_sample = first_active_frame * ACTIVITY_FRAME_SAMPLES;
+    let last_active_sample = ((last_active_frame + 1) * ACTIVITY_FRAME_SAMPLES)
+        .min(samples.len())
+        .saturating_sub(1);
+    Some((first_active_sample, last_active_sample))
+}
+
+fn frame_rms(samples: &[f32]) -> f32 {
+    (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len().max(1) as f32).sqrt()
 }
 
 fn query_gpu_memory_mib() -> Option<f64> {
@@ -642,4 +717,20 @@ fn query_gpu_memory_mib() -> Option<f64> {
 
 fn round3(value: f64) -> f64 {
     (value * 1_000.0).round() / 1_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activity_bounds_ignore_low_level_preroll_noise() {
+        let mut samples = vec![0.01; ACTIVITY_FRAME_SAMPLES * 3];
+        samples.extend(vec![0.1; ACTIVITY_FRAME_SAMPLES * 2]);
+        samples.extend(vec![0.0; ACTIVITY_FRAME_SAMPLES]);
+        assert_eq!(
+            active_speech_bounds(&samples),
+            Some((ACTIVITY_FRAME_SAMPLES * 3, ACTIVITY_FRAME_SAMPLES * 5 - 1))
+        );
+    }
 }
