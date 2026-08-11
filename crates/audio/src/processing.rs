@@ -148,7 +148,7 @@ impl SpeechDetector {
                 let config = VadModelConfig {
                     silero_vad: SileroVadModelConfig {
                         model: Some(path.to_string_lossy().into_owned()),
-                        threshold: 0.35,
+                        threshold: 0.2,
                         min_silence_duration: 0.1,
                         min_speech_duration: 0.03,
                         window_size: 512,

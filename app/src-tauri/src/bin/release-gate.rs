@@ -29,6 +29,7 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(90);
 struct Args {
     turns: usize,
     soak_minutes: f64,
+    barge_repetitions: Option<usize>,
     audio: Option<PathBuf>,
     reference: Option<PathBuf>,
     output: PathBuf,
@@ -39,6 +40,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut turns: usize = 20;
         let mut soak_minutes: f64 = 0.0;
+        let mut barge_repetitions = None;
         let mut audio = None;
         let mut reference = None;
         let mut output = PathBuf::from("artifacts/release/conversation-benchmark.json");
@@ -55,6 +57,15 @@ impl Args {
                     soak_minutes = value(&mut arguments, "--soak-minutes")?
                         .parse()
                         .map_err(|_| "--soak-minutes must be a number".to_owned())?;
+                }
+                "--barge-repetitions" => {
+                    let repetitions = value(&mut arguments, "--barge-repetitions")?
+                        .parse()
+                        .map_err(|_| "--barge-repetitions must be a positive integer".to_owned())?;
+                    if repetitions == 0 {
+                        return Err("--barge-repetitions must be greater than zero".to_owned());
+                    }
+                    barge_repetitions = Some(repetitions);
                 }
                 "--audio" => audio = Some(PathBuf::from(value(&mut arguments, "--audio")?)),
                 "--reference" => {
@@ -74,6 +85,7 @@ impl Args {
         Ok(Self {
             turns,
             soak_minutes,
+            barge_repetitions,
             audio,
             reference,
             output,
@@ -133,6 +145,13 @@ struct CancellationEvidence {
     scope: String,
 }
 
+#[derive(Debug, Default)]
+struct BargeInMeasurements {
+    onset_to_vad_ms: Vec<f64>,
+    cancel_to_callback_ms: Vec<f64>,
+    onset_to_silence_ms: Vec<f64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConversationEvidence {
@@ -148,6 +167,8 @@ struct ConversationEvidence {
     warm_llm_first_token_ms: Vec<f64>,
     asr_partial_update_ms: Vec<f64>,
     barge_in_to_silence_ms: Vec<f64>,
+    barge_in_onset_to_vad_ms: Vec<f64>,
+    barge_in_cancel_to_callback_ms: Vec<f64>,
     barge_in_measurement_scope: String,
     capture_preprocessing_scope: String,
     warmed_gpu_memory_mib: Vec<f64>,
@@ -235,6 +256,8 @@ async fn run_with_runtime(
         warm_llm_first_token_ms: Vec::with_capacity(args.turns),
         asr_partial_update_ms: Vec::new(),
         barge_in_to_silence_ms: Vec::new(),
+        barge_in_onset_to_vad_ms: Vec::new(),
+        barge_in_cancel_to_callback_ms: Vec::new(),
         barge_in_measurement_scope: "prerecorded speech onset through production AEC and Silero VAD, cancellation dispatch, and WASAPI output callback acknowledgement".to_owned(),
         capture_preprocessing_scope: if args.reference.is_some() {
             "prerecorded capture and paired playback reference are upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection"
@@ -291,12 +314,15 @@ async fn run_with_runtime(
     }
 
     if !args.skip_audio {
-        evidence.barge_in_to_silence_ms = measure_barge_in(
+        let barge_in = measure_barge_in(
             captured_audio,
             &playback_fixture,
             vad_model_path,
-            args.turns,
+            args.barge_repetitions.unwrap_or(args.turns),
         )?;
+        evidence.barge_in_to_silence_ms = barge_in.onset_to_silence_ms;
+        evidence.barge_in_onset_to_vad_ms = barge_in.onset_to_vad_ms;
+        evidence.barge_in_cancel_to_callback_ms = barge_in.cancel_to_callback_ms;
     }
     evidence.active_stream_cancellation =
         measure_active_stream_cancellation(status.tts_backend).await?;
@@ -672,7 +698,7 @@ fn measure_barge_in(
     playback: &[f32],
     vad_model_path: &Path,
     repetitions: usize,
-) -> Result<Vec<f64>, String> {
+) -> Result<BargeInMeasurements, String> {
     if playback.is_empty() {
         return Err("barge-in fixture contains no PCM".to_owned());
     }
@@ -686,7 +712,11 @@ fn measure_barge_in(
         fixture.extend_from_slice(playback);
     }
     fixture.truncate(96_000);
-    let mut measurements = Vec::with_capacity(repetitions);
+    let mut measurements = BargeInMeasurements {
+        onset_to_vad_ms: Vec::with_capacity(repetitions),
+        cancel_to_callback_ms: Vec::with_capacity(repetitions),
+        onset_to_silence_ms: Vec::with_capacity(repetitions),
+    };
     for _ in 0..repetitions {
         let mut processor = CaptureProcessor::new(40, Some(vad_model_path))?;
         let accepted = engine.queue_playback_partial(&fixture);
@@ -722,6 +752,12 @@ fn measure_barge_in(
             reference_offset = (reference_offset + DEVICE_FRAME_SAMPLES) % fixture.len();
             let frame = processor.process(&capture, &reference)?;
             if frame.speech_active {
+                let onset = speech_onset.ok_or_else(|| {
+                    "Silero detected playback before user speech onset".to_owned()
+                })?;
+                measurements
+                    .onset_to_vad_ms
+                    .push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
                 cancellation.cancel();
                 engine.cancel_playback();
                 detected = true;
@@ -736,10 +772,15 @@ fn measure_barge_in(
         }
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
-            if engine.status().last_cancel_to_callback_ms.is_some() {
+            if let Some(cancel_to_callback_ms) = engine.status().last_cancel_to_callback_ms {
                 let onset = speech_onset
                     .ok_or_else(|| "barge-in speech onset was not observed".to_owned())?;
-                measurements.push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
+                measurements
+                    .cancel_to_callback_ms
+                    .push(round3(cancel_to_callback_ms));
+                measurements
+                    .onset_to_silence_ms
+                    .push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
                 break;
             }
             if Instant::now() >= deadline {
