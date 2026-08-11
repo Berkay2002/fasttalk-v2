@@ -37,7 +37,7 @@ $evidence = [ordered]@{
     environment = [ordered]@{
         desktopApplicationsOpen = $true
         networkDisabled = [bool]$NetworkDisabled
-        notes = "Integrated measurements use the pinned prerecorded JFK WAV over the production ASR WebSocket, streamed LLM-to-TTS handoff, and prerecorded speech onset through production AEC, Silero VAD, cancellation dispatch, and WASAPI output-callback acknowledgement."
+        notes = "Integrated measurements use the pinned prerecorded JFK WAV over the production ASR WebSocket and streamed LLM-to-TTS handoff. Barge-in measures prerecorded speech onset through production AEC, the fast energy interruption detector, cancellation dispatch, and WASAPI output-callback acknowledgement. Silero remains the speech-state and endpointing detector."
     }
     samples = [ordered]@{
         endOfSpeechToFirstAudioMs = @($conversationEvidence.endOfSpeechToFirstAudioMs)

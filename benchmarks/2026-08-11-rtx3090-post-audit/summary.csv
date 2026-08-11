@@ -1,0 +1,20 @@
+scope,profile,workload,samples,metric,value,unit,gate,status,evidence
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,dedicated generation benchmark,5,generation_min,47.364,tokens_per_second,20,pass,qwen35-llm.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,20,end_speech_to_first_audio_p50,604.667,ms,1200,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,20,end_speech_to_first_audio_p95,1186.430,ms,1800,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,20,warm_llm_ttft_p95,99.314,ms,900,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,540,asr_partial_event_max,23.958,ms,250,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,post-aec interruption,20,onset_to_interrupt_p95,42.038,ms,,observation,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,post-aec interruption,20,interrupt_to_callback_p95,9.778,ms,,observation,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,post-aec interruption,20,onset_to_silence_max,51.734,ms,150,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,20,synthesized_clauses_min,2,count,2,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded full-clause end to end,20,gpu_total_max,12061,MiB,23040,pass,conversation-20-turn.json
+cancellation,qwen3.5-asr-magpie,active live stream after first event,1,llm_delivery_cancel,0.105,ms,2000,pass,conversation-20-turn.json
+cancellation,qwen3.5-asr-magpie,active bounded clause after first pcm,1,tts_delivery_cancel,0.030,ms,2000,pass,conversation-20-turn.json
+soak,qwen3.5-asr-magpie,continuous full-clause conversation,1,duration,30.111,minutes,30,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous full-clause conversation,131,completed_turns,131,count,1,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous full-clause conversation,131,turn_failure_count,0,count,0,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous full-clause conversation,131,worker_failure_count,0,count,0,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous full-clause conversation,131,oom_count,0,count,0,pass,conversation-30-minute-soak.json
+acoustic,qwen3.5-asr-magpie,six prerecorded integration scenarios,6,scenario_transcript_checks,6,count,6,pass,acoustic-scenarios.json
+release,qwen3.5-asr-magpie,formal gate evaluation,14,checks_passed,14,count,14,pass,release-gates.json

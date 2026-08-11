@@ -4,7 +4,10 @@ This directory keeps the measured engineering record for FastTalk. It is
 separate from the release gate because failed candidates and intermediate
 spikes are useful evidence too.
 
-The current record is [2026-08-11-rtx3090](2026-08-11-rtx3090/README.md).
+The current control is
+[2026-08-11-rtx3090-post-audit](2026-08-11-rtx3090-post-audit/README.md).
+The original [2026-08-11-rtx3090](2026-08-11-rtx3090/README.md) archive is
+retained as superseded experiment history.
 Its `summary.csv` is intended for plotting and comparison. Its `evidence`
 directory contains the small raw JSON outputs and a SHA-256 manifest copied
 from the ignored `artifacts` workspace.

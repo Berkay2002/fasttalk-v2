@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "pass": true,
+  "checks": [
+    {
+      "id": "evidence.schema",
+      "category": "evidence",
+      "status": "pass",
+      "expected": "1",
+      "actual": "1"
+    },
+    {
+      "id": "environment.desktop-applications",
+      "category": "evidence",
+      "status": "pass",
+      "expected": "normal desktop applications open",
+      "actual": "true"
+    },
+    {
+      "id": "latency.end-of-speech-to-first-audio.p50",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 1200 with >= 20 samples",
+      "actual": "604.667 from 20 valid samples"
+    },
+    {
+      "id": "latency.end-of-speech-to-first-audio.p95",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 1800 with >= 20 samples",
+      "actual": "1186.43 from 20 valid samples"
+    },
+    {
+      "id": "latency.warm-llm-first-token.p95",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 900 with >= 20 samples",
+      "actual": "99.314 from 20 valid samples"
+    },
+    {
+      "id": "throughput.llm-generation",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": ">= 20 for every sample with >= 5 samples",
+      "actual": "minimum 47.364 from 5 valid samples"
+    },
+    {
+      "id": "latency.asr-partial-update",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 250 for every sample with >= 20 samples",
+      "actual": "maximum 23.958 from 540 valid samples"
+    },
+    {
+      "id": "latency.barge-in-to-silence",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 150 for every sample with >= 20 samples",
+      "actual": "maximum 51.734 from 20 valid samples"
+    },
+    {
+      "id": "memory.combined-warmed-vram",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 23040 for every sample with >= 1 samples",
+      "actual": "maximum 12061 from 20 valid samples"
+    },
+    {
+      "id": "soak.duration",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": ">= 30 minutes",
+      "actual": "30.111 minutes"
+    },
+    {
+      "id": "soak.oom",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "<= 0 OOM events",
+      "actual": "0 OOM events"
+    },
+    {
+      "id": "soak.completed-turns",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": ">= 1 completed full conversation turn",
+      "actual": "131 completed turns"
+    },
+    {
+      "id": "soak.worker-failures",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "0 failed native worker polls",
+      "actual": "0 failed native worker polls"
+    },
+    {
+      "id": "soak.turn-failures",
+      "category": "benchmark",
+      "status": "pass",
+      "expected": "0 failed or timed-out conversation turns",
+      "actual": "0 failed turns"
+    }
+  ],
+  "observations": {
+    "latency.asr-partial-update.max": 23.958,
+    "latency.barge-in-to-silence.max": 51.734,
+    "latency.end-of-speech-to-first-audio.p50": 604.667,
+    "latency.end-of-speech-to-first-audio.p95": 1186.43,
+    "latency.warm-llm-first-token.p95": 99.314,
+    "memory.combined-warmed-vram.max": 12061.0,
+    "throughput.llm-generation.min": 47.364,
+    "ttsRealTimeFactorMax": 0.2041
+  }
+}

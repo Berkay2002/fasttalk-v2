@@ -1,5 +1,10 @@
 # RTX 3090 feasibility and release measurements
 
+This directory is the original baseline archive. Its first-clause and direct
+playback-cancellation methodology was later found to overstate full streaming
+and barge-in coverage. The corrected post-audit archive preserves the new
+capture, clause, cancellation, and soak evidence separately.
+
 ## Result
 
 Qwen3.6 27B Q4_K_M was functionally compatible, but its representative

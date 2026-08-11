@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "prerecordedAudio": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\app\\src-tauri\\../..\\.cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav",
+  "turns": 1,
+  "runtimeProfile": "rtx3090-qwen35-q5-magpie",
+  "ttsBackend": "magpie",
+  "transcripts": [
+    "And so my fellow Americans ask not what your country can do for you. Ask what you can do for your country."
+  ],
+  "firstClauses": [
+    "\"I heard the transcript clearly."
+  ],
+  "synthesizedClauseCounts": [
+    3
+  ],
+  "endOfSpeechToFirstAudioMs": [
+    655.602
+  ],
+  "warmLlmFirstTokenMs": [
+    190.936
+  ],
+  "asrPartialUpdateMs": [
+    8.29,
+    7.331,
+    11.777,
+    8.274,
+    9.62,
+    11.104,
+    9.481,
+    11.259,
+    10.143,
+    9.577,
+    16.323,
+    12.459,
+    15.893,
+    16.522,
+    14.41,
+    19.976,
+    13.552,
+    15.492,
+    16.835,
+    16.3,
+    14.669,
+    17.308,
+    14.331,
+    19.362,
+    16.11,
+    13.303,
+    22.753
+  ],
+  "bargeInToSilenceMs": [],
+  "bargeInOnsetToVadMs": [],
+  "bargeInCancelToCallbackMs": [],
+  "bargeInMeasurementScope": "prerecorded speech onset through production AEC and the fast energy interruption detector, cancellation dispatch, and WASAPI output callback acknowledgement; Silero remains the speech-state and endpointing detector",
+  "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+  "warmedGpuMemoryMib": [
+    12006.0
+  ],
+  "activeStreamCancellation": {
+    "llmAfterFirstDeltaMs": 0.083,
+    "ttsAfterFirstPcmMs": 0.043,
+    "scope": "client delivery cancellation after the first live LLM delta and first live TTS PCM frame; Magpie drains the already-started native clause response and workers must remain ready"
+  },
+  "soak": {
+    "requestedMinutes": 30.0,
+    "durationMinutes": 30.111,
+    "completedTurns": 131,
+    "turnFailureCount": 0,
+    "oomCount": 0,
+    "workerFailureCount": 0
+  }
+}

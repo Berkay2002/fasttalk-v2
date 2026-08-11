@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = "benchmarks/2026-08-11-rtx3090/evidence"
+    [string]$OutputDirectory = "benchmarks/2026-08-11-rtx3090-post-audit/evidence"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +27,8 @@ $sources = @(
     @{ Source = "artifacts/release/qwen3.5-combined-vram.json"; Name = "qwen35-combined-vram.json"; Required = $true },
     @{ Source = "artifacts/release/conversation-benchmark.json"; Name = "conversation-20-turn.json"; Required = $true },
     @{ Source = "artifacts/release/acoustic-scenarios/summary.json"; Name = "acoustic-scenarios.json"; Required = $true },
-    @{ Source = "artifacts/release/conversation-soak.json"; Name = "conversation-30-minute-soak.json"; Required = $false },
+    @{ Source = "artifacts/release/conversation-30-minute-soak.json"; Name = "conversation-30-minute-soak.json"; Required = $true },
+    @{ Source = "artifacts/release/measured-evidence.json"; Name = "corrected-pipeline-evidence.json"; Required = $true },
     @{ Source = "artifacts/release/gate-report.json"; Name = "release-gates.json"; Required = $true },
     @{ Source = "artifacts/release/installer-sanitized.json"; Name = "installer-sanitized.json"; Required = $true },
     @{ Source = "artifacts/release/release-manifest.json"; Name = "unsigned-release-manifest.json"; Required = $true }
@@ -58,7 +59,7 @@ foreach ($entry in $sources) {
 $commit = (& git -C $workspace rev-parse HEAD).Trim()
 $manifest = [ordered]@{
     schemaVersion = 1
-    runId = "2026-08-11-rtx3090"
+    runId = "2026-08-11-rtx3090-post-audit"
     sourceCommit = $commit
     files = $manifestFiles
 }

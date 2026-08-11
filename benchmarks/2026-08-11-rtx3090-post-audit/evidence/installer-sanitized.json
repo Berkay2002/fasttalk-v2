@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "installer": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\target\\release\\bundle\\nsis\\FastTalk_0.1.0_x64-setup.exe",
+  "installerSha256": "36e061185ba9c04fe143c0251847666aeee5662ebd3e1cbf0e07ae9eeff08eef",
+  "sanitizedEnvironment": true,
+  "runtimeFilesVerified": 26,
+  "windowOpened": true,
+  "uninstallPassed": true
+}
