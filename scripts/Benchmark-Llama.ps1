@@ -5,7 +5,7 @@ param(
     [string]$Output = "artifacts/feasibility/llama-benchmark.json",
     [int]$Port = 18080,
     [int]$ContextSize = 16384,
-    [int]$Parallel = 4,
+    [int]$Parallel = 1,
     [int]$WarmSamples = 20,
     [int]$ThroughputSamples = 5
 )
@@ -167,14 +167,61 @@ try {
             response = Invoke-Completion @(@{ role = "user"; content = "Return exactly three lowercase color names separated by commas, with no spaces or other text." }) 24
             expected = "^[a-z]+,[a-z]+,[a-z]+$"
             method = "regex"
+        },
+        [ordered]@{
+            id = "multi-step-arithmetic"
+            response = Invoke-Completion @(@{ role = "user"; content = "A store has 73 units, sells 28, receives 14, then discards 9. Reply with only the final unit count." }) 16
+            expected = "50"
+            method = "exact"
+        },
+        [ordered]@{
+            id = "latest-conversation-state"
+            response = Invoke-Completion @(
+                @{ role = "user"; content = "The deployment region is north-3." },
+                @{ role = "assistant"; content = "Understood." },
+                @{ role = "user"; content = "Correction: the deployment region is west-7." },
+                @{ role = "assistant"; content = "Updated." },
+                @{ role = "user"; content = "What is the current deployment region? Reply with only the region." }
+            ) 16
+            expected = "west-7"
+            method = "exact-case-insensitive"
+        },
+        [ordered]@{
+            id = "json-contract"
+            response = Invoke-Completion @(@{ role = "user"; content = 'Return one JSON object with exactly two fields: string field "status" equal to "ready", and integer field "count" equal to 3. No Markdown.' }) 32
+            expected = '{"status":"ready","count":3}'
+            method = "json-contract"
         }
     )
+    $effectiveContextPerSlot = [math]::Floor($ContextSize / $Parallel)
+    if ($effectiveContextPerSlot -ge 16384) {
+        $needle = "cobalt-42"
+        $longContext = "The recovery code is $needle. " + ("filler " * 12000) +
+            "What is the recovery code? Reply with only the code."
+        $qualityCases += [ordered]@{
+            id = "long-context-recall"
+            response = Invoke-Completion @(@{ role = "user"; content = $longContext }) 16
+            expected = $needle
+            method = "exact-case-insensitive"
+        }
+    }
     foreach ($case in $qualityCases) {
         $normalized = $case.response.Trim()
         $case.pass = switch ($case.method) {
             "exact" { $normalized -ceq $case.expected }
             "exact-case-insensitive" { $normalized -ieq $case.expected }
             "regex" { $normalized -cmatch $case.expected }
+            "json-contract" {
+                try {
+                    $parsed = $normalized | ConvertFrom-Json
+                    $properties = @($parsed.PSObject.Properties.Name)
+                    $properties.Count -eq 2 -and
+                        $properties -contains "status" -and
+                        $properties -contains "count" -and
+                        $parsed.status -ceq "ready" -and
+                        $parsed.count -eq 3
+                } catch { $false }
+            }
         }
     }
 
@@ -185,6 +232,7 @@ try {
         model = [IO.Path]::GetRelativePath($workspace, $modelPath).Replace('\', '/')
         contextSize = $ContextSize
         parallel = $Parallel
+        effectiveContextPerSlot = $effectiveContextPerSlot
         warmLlmFirstTokenMs = @($ttft)
         generationTokensPerSecond = @($throughput)
         qualityCases = @($qualityCases)

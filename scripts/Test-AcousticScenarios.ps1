@@ -1,11 +1,14 @@
 [CmdletBinding()]
 param(
-    [string]$OutputRoot = "artifacts/release/acoustic-scenarios"
+    [string]$OutputRoot = "artifacts/release/acoustic-scenarios",
+    [string]$Profile,
+    [ValidateSet("release", "debug")]
+    [string]$BuildProfile = "release"
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = Split-Path -Parent $PSScriptRoot
-$gate = Join-Path $workspace "target\debug\release-gate.exe"
+$gate = Join-Path $workspace "target\$BuildProfile\release-gate.exe"
 if (-not (Test-Path -LiteralPath $gate -PathType Leaf)) {
     throw "Build release-gate before running acoustic scenarios"
 }
@@ -22,6 +25,9 @@ $results = foreach ($fixture in $fixtures) {
     $audio = Join-Path $workspace "tests\fixtures\audio\$($fixture.Name)"
     $output = Join-Path $workspace "$OutputRoot\$([IO.Path]::GetFileNameWithoutExtension($fixture.Name)).json"
     $arguments = @("--turns", "1", "--skip-audio", "--audio", $audio, "--output", $output)
+    if ($Profile) {
+        $arguments += @("--profile", $Profile)
+    }
     if ($fixture.Reference) {
         $arguments += @("--reference", (Join-Path $workspace $fixture.Reference))
     }

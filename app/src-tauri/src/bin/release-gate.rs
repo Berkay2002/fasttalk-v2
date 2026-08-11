@@ -34,6 +34,7 @@ struct Args {
     reference: Option<PathBuf>,
     output: PathBuf,
     skip_audio: bool,
+    profile: Option<String>,
 }
 
 impl Args {
@@ -45,6 +46,7 @@ impl Args {
         let mut reference = None;
         let mut output = PathBuf::from("artifacts/release/conversation-benchmark.json");
         let mut skip_audio = false;
+        let mut profile = None;
         let mut arguments = env::args().skip(1);
         while let Some(argument) = arguments.next() {
             match argument.as_str() {
@@ -73,6 +75,7 @@ impl Args {
                 }
                 "--output" => output = PathBuf::from(value(&mut arguments, "--output")?),
                 "--skip-audio" => skip_audio = true,
+                "--profile" => profile = Some(value(&mut arguments, "--profile")?),
                 unknown => return Err(format!("unknown argument: {unknown}")),
             }
         }
@@ -90,6 +93,7 @@ impl Args {
             reference,
             output,
             skip_audio,
+            profile,
         })
     }
 }
@@ -204,7 +208,12 @@ async fn run() -> Result<(), String> {
             workspace.join(path)
         }
     });
-    let mut runtime = NativeRuntime::for_development_checkout();
+    let mut runtime = match args.profile.as_deref() {
+        Some(profile_id) => {
+            NativeRuntime::for_development_profile(profile_id).map_err(|error| error.to_string())?
+        }
+        None => NativeRuntime::for_development_checkout(),
+    };
     let vad_model_path = workspace.join(&runtime.profile().vad.legacy_path);
     let captured_audio = load_recorded_audio(&audio_path)?;
     let reference_audio = reference_path

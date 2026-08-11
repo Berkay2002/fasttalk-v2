@@ -132,8 +132,22 @@ impl NativeRuntime {
         Self::for_root(root)
     }
 
+    pub fn for_development_profile(profile_id: &str) -> Result<Self, SupervisorError> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        Self::for_root_profile(root, profile_id)
+    }
+
     pub fn for_root(root: PathBuf) -> Self {
         let profile = default_runtime_profile();
+        Self::with_profile(root, profile)
+    }
+
+    pub fn for_root_profile(root: PathBuf, profile_id: &str) -> Result<Self, SupervisorError> {
+        let profile = named_runtime_profile(profile_id)?;
+        Ok(Self::with_profile(root, profile))
+    }
+
+    fn with_profile(root: PathBuf, profile: RuntimeProfile) -> Self {
         let models = NativeModelPaths {
             qwen: root.join(&profile.llm.model.legacy_path),
             asr: root.join(&profile.asr.legacy_path),
@@ -386,6 +400,26 @@ impl NativeRuntime {
 }
 
 fn default_runtime_profile() -> RuntimeProfile {
+    let profiles = runtime_profiles();
+    let default_profile = profiles.default_profile.clone();
+    profiles
+        .profiles
+        .into_iter()
+        .find(|profile| profile.id == default_profile)
+        .expect("default runtime profile must exist")
+}
+
+fn named_runtime_profile(profile_id: &str) -> Result<RuntimeProfile, SupervisorError> {
+    runtime_profiles()
+        .profiles
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| {
+            SupervisorError::InvalidSpec(format!("unknown runtime profile: {profile_id}"))
+        })
+}
+
+fn runtime_profiles() -> RuntimeProfiles {
     let profiles: RuntimeProfiles =
         serde_json::from_str(include_str!("../../../config/runtime-profiles.json"))
             .expect("embedded runtime profile JSON must be valid");
@@ -394,10 +428,6 @@ fn default_runtime_profile() -> RuntimeProfile {
         "unsupported runtime profile schema"
     );
     profiles
-        .profiles
-        .into_iter()
-        .find(|profile| profile.id == profiles.default_profile)
-        .expect("default runtime profile must exist")
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -543,6 +573,15 @@ mod tests {
     use fasttalk_runtime::WorkerState;
     use std::time::Instant;
     use tokio::sync::mpsc;
+
+    #[test]
+    fn named_profile_selects_the_requested_model_bindings() {
+        let profile = named_runtime_profile("rtx3090-qwen35-q5-parakeet-32k").unwrap();
+        assert_eq!(profile.llm.context_size, 32_768);
+        assert_eq!(profile.llm.parallel, 1);
+        assert_eq!(profile.asr.group_id, "parakeet-ctc");
+        assert!(named_runtime_profile("missing-profile").is_err());
+    }
 
     #[test]
     fn vram_policy_uses_cpu_tts_above_the_measured_limit() {

@@ -4,7 +4,7 @@ param(
     [string]$Profile = "qwen3.6-27b-q4-k-m-16k-non-thinking-with-speech",
     [string]$Output = "artifacts/feasibility/combined-vram.json",
     [int]$ContextSize = 16384,
-    [int]$Parallel = 4,
+    [int]$Parallel = 1,
     [string]$AsrModel = ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
     [string]$TtsModel = ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
     [string]$CodecModel = ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
@@ -94,6 +94,7 @@ try {
         llamaModel = [IO.Path]::GetRelativePath($workspace, $llamaModelPath).Replace('\', '/')
         contextSize = $ContextSize
         parallel = $Parallel
+        effectiveContextPerSlot = [math]::Floor($ContextSize / $Parallel)
         asrModel = [IO.Path]::GetRelativePath($workspace, $asrModelPath).Replace('\', '/')
         speechProfile = if ($AsrOnly) { "asr-only" } else { "asr-and-magpie" }
         baselineGpuMemoryMiB = $baseline
