@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "2026.08.11.1",
+  "release": "2026.08.11.2",
   "publicKeyId": "fasttalk-models-2026-01",
   "models": [
     {
@@ -96,6 +96,48 @@
         "id": "nvidia-open-model-license",
         "name": "NVIDIA Open Model License",
         "url": "https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf"
+      },
+      "postInstall": []
+    },
+    {
+      "id": "silero-vad",
+      "displayName": "Silero VAD 16 kHz ONNX",
+      "repository": "istupakov/silero-vad-onnx",
+      "revision": "b3e3ee3cce4c11ceb63b1a0b229d916069c1ddf6",
+      "legacyRoot": ".cache/models/silero-vad",
+      "artifacts": [
+        {
+          "remotePath": "silero_vad_16k_op15.onnx",
+          "path": "silero_vad_16k_op15.onnx",
+          "sizeBytes": 1289603,
+          "sha256": "7ed98ddbad84ccac4cd0aeb3099049280713df825c610a8ed34543318f1b2c49"
+        }
+      ],
+      "license": {
+        "id": "mit",
+        "name": "MIT License",
+        "url": "https://huggingface.co/istupakov/silero-vad-onnx/blob/b3e3ee3cce4c11ceb63b1a0b229d916069c1ddf6/LICENSE.txt"
+      },
+      "postInstall": []
+    },
+    {
+      "id": "smart-turn",
+      "displayName": "Smart Turn v3.2 CPU ONNX",
+      "repository": "pipecat-ai/smart-turn-v3",
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+      "legacyRoot": ".cache/models/smart-turn",
+      "artifacts": [
+        {
+          "remotePath": "smart-turn-v3.2-cpu.onnx",
+          "path": "smart-turn-v3.2-cpu.onnx",
+          "sizeBytes": 8679182,
+          "sha256": "2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f"
+        }
+      ],
+      "license": {
+        "id": "bsd-2-clause",
+        "name": "BSD 2-Clause License",
+        "url": "https://github.com/pipecat-ai/smart-turn/blob/main/LICENSE"
       },
       "postInstall": []
     },

@@ -33,6 +33,8 @@ pub struct RuntimeProfile {
     pub tts: TtsBinding,
     pub codec: ModelBinding,
     pub fallback_tts: ModelBinding,
+    pub vad: ModelBinding,
+    pub turn_detector: ModelBinding,
 }
 
 #[derive(Clone, Debug, Deserialize)]

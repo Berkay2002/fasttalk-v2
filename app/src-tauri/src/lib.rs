@@ -1,5 +1,6 @@
 pub mod native;
 mod orchestrator;
+mod smart_turn;
 
 use fasttalk_audio::{AudioConfig, AudioDevices, AudioEngine, AudioStatus};
 use fasttalk_conversation::{
@@ -7,7 +8,7 @@ use fasttalk_conversation::{
 };
 use fasttalk_model_manager::{InstallProgress, ModelManager, ModelStatus, SignedManifest};
 use fasttalk_runtime::WorkerState;
-use native::{NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile};
+use native::{ModelBinding, NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -110,10 +111,15 @@ fn audio_start(
     let mut audio = lock(&state.audio, "audioUnavailable")?;
     if audio.is_none() {
         let request = request.unwrap_or_default();
+        let profile = lock(&state.runtime, "runtimeUnavailable")?
+            .profile()
+            .clone();
+        let vad_model_path = binding_model_path(&state.models, &profile.vad)?;
         *audio = Some(
             AudioEngine::start(AudioConfig {
                 input_device_id: request.input_device_id,
                 output_device_id: request.output_device_id,
+                vad_model_path: Some(vad_model_path),
                 ..AudioConfig::default()
             })
             .map_err(|error| CommandError {
@@ -204,12 +210,23 @@ fn conversation_start(
             .apply(ConversationEvent::StartListening)
             .map_err(invalid_transition)?
     };
-    *controller = Some(orchestrator::start(
-        app,
-        state.engine.clone(),
-        state.audio.clone(),
-        workers.tts_backend,
-    ));
+    let profile = lock(&state.runtime, "runtimeUnavailable")?
+        .profile()
+        .clone();
+    let turn_detector_path = binding_model_path(&state.models, &profile.turn_detector)?;
+    *controller = Some(
+        orchestrator::start(
+            app,
+            state.engine.clone(),
+            state.audio.clone(),
+            workers.tts_backend,
+            &turn_detector_path,
+        )
+        .map_err(|message| CommandError {
+            code: "turnDetectorUnavailable",
+            message,
+        })?,
+    );
     Ok(snapshot)
 }
 
@@ -282,6 +299,20 @@ fn native_model_paths(
         magpie_tokenizer: magpie.join(&profile.tts.tokenizer_artifact),
         kokoro,
     })
+}
+
+fn binding_model_path(
+    models: &ModelManager,
+    binding: &ModelBinding,
+) -> Result<std::path::PathBuf, CommandError> {
+    let root = models
+        .resolved_root(&binding.group_id)
+        .map_err(model_error)?
+        .ok_or_else(|| CommandError {
+            code: "modelMissing",
+            message: format!("required model group is not ready: {}", binding.group_id),
+        })?;
+    Ok(root.join(&binding.artifact))
 }
 
 #[tauri::command]

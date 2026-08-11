@@ -1,5 +1,7 @@
+use sherpa_onnx::{SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
 use sonora::config::EchoCanceller;
 use sonora::{AudioProcessing, Config, StreamConfig};
+use std::path::Path;
 
 pub const DEVICE_SAMPLE_RATE: u32 = 48_000;
 pub const ASR_SAMPLE_RATE: u32 = 16_000;
@@ -50,7 +52,7 @@ impl AecProcessor {
 }
 
 #[derive(Debug)]
-pub struct SpeechDetector {
+struct EnergySpeechDetector {
     threshold_rms: f32,
     attack_frames: u8,
     release_frames: u8,
@@ -59,7 +61,7 @@ pub struct SpeechDetector {
     active: bool,
 }
 
-impl SpeechDetector {
+impl EnergySpeechDetector {
     pub fn new(threshold_rms: f32, attack_frames: u8, release_frames: u8) -> Self {
         Self {
             threshold_rms,
@@ -91,9 +93,55 @@ impl SpeechDetector {
     }
 }
 
-impl Default for SpeechDetector {
+impl Default for EnergySpeechDetector {
     fn default() -> Self {
         Self::new(0.015, 3, 10)
+    }
+}
+
+pub struct SpeechDetector {
+    silero: Option<VoiceActivityDetector>,
+    energy_fallback: EnergySpeechDetector,
+}
+
+impl SpeechDetector {
+    pub fn new(model_path: Option<&Path>) -> Result<Self, String> {
+        let silero = model_path
+            .map(|path| {
+                if !path.is_file() {
+                    return Err(format!("Silero VAD model is missing: {}", path.display()));
+                }
+                let config = VadModelConfig {
+                    silero_vad: SileroVadModelConfig {
+                        model: Some(path.to_string_lossy().into_owned()),
+                        threshold: 0.5,
+                        min_silence_duration: 0.1,
+                        min_speech_duration: 0.03,
+                        window_size: 512,
+                        max_speech_duration: 30.0,
+                    },
+                    sample_rate: ASR_SAMPLE_RATE as i32,
+                    num_threads: 1,
+                    provider: Some("cpu".to_owned()),
+                    ..VadModelConfig::default()
+                };
+                VoiceActivityDetector::create(&config, 30.0)
+                    .ok_or_else(|| "failed to create Silero VAD session".to_owned())
+            })
+            .transpose()?;
+        Ok(Self {
+            silero,
+            energy_fallback: EnergySpeechDetector::default(),
+        })
+    }
+
+    pub fn update(&mut self, samples: &[f32]) -> bool {
+        if let Some(detector) = &self.silero {
+            detector.accept_waveform(samples);
+            detector.detected()
+        } else {
+            self.energy_fallback.update(samples)
+        }
     }
 }
 
@@ -103,7 +151,7 @@ mod tests {
 
     #[test]
     fn detector_uses_attack_and_release_hysteresis() {
-        let mut detector = SpeechDetector::new(0.01, 2, 3);
+        let mut detector = EnergySpeechDetector::new(0.01, 2, 3);
         assert!(!detector.update(&[0.02; ASR_FRAME_SAMPLES]));
         assert!(detector.update(&[0.02; ASR_FRAME_SAMPLES]));
         assert!(detector.update(&[0.0; ASR_FRAME_SAMPLES]));
@@ -129,5 +177,14 @@ mod tests {
             processor.process(&capture, &render, &mut output).unwrap();
         }
         assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    #[ignore = "loads the pinned Silero VAD ONNX model"]
+    fn pinned_silero_model_accepts_audio() {
+        let model = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.cache/models/silero-vad/silero_vad_16k_op15.onnx");
+        let mut detector = SpeechDetector::new(Some(&model)).unwrap();
+        assert!(!detector.update(&[0.0; ASR_FRAME_SAMPLES]));
     }
 }

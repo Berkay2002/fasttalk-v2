@@ -8,6 +8,7 @@ use processing::{
 use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -21,6 +22,7 @@ pub struct AudioConfig {
     pub aec_stream_delay_ms: i32,
     pub input_device_id: Option<String>,
     pub output_device_id: Option<String>,
+    pub vad_model_path: Option<PathBuf>,
 }
 
 impl Default for AudioConfig {
@@ -29,6 +31,7 @@ impl Default for AudioConfig {
             aec_stream_delay_ms: 40,
             input_device_id: None,
             output_device_id: None,
+            vad_model_path: None,
         }
     }
 }
@@ -281,6 +284,7 @@ impl AudioEngine {
             .map_err(|error| AudioError::Stream(format!("build output stream: {error}")))?;
 
         let processor_shared = shared.clone();
+        let vad_model_path = config.vad_model_path.clone();
         let processor_thread = std::thread::Builder::new()
             .name("fasttalk-audio-processing".to_owned())
             .spawn(move || {
@@ -290,6 +294,7 @@ impl AudioEngine {
                     asr_producer,
                     processor_shared,
                     config.aec_stream_delay_ms,
+                    vad_model_path,
                 );
             })
             .map_err(|error| AudioError::Stream(format!("start audio processor: {error}")))?;
@@ -463,6 +468,7 @@ fn run_processor(
     mut asr_producer: HeapProd<f32>,
     shared: Arc<SharedState>,
     stream_delay_ms: i32,
+    vad_model_path: Option<PathBuf>,
 ) {
     let mut processor = match AecProcessor::new(stream_delay_ms) {
         Ok(processor) => processor,
@@ -472,7 +478,14 @@ fn run_processor(
             return;
         }
     };
-    let mut detector = SpeechDetector::default();
+    let mut detector = match SpeechDetector::new(vad_model_path.as_deref()) {
+        Ok(detector) => detector,
+        Err(error) => {
+            shared.record_error(error);
+            shared.running.store(false, Ordering::Release);
+            return;
+        }
+    };
     let mut capture = [0.0; DEVICE_FRAME_SAMPLES];
     let mut reference = [0.0; DEVICE_FRAME_SAMPLES];
     let mut output = [0.0; ASR_FRAME_SAMPLES];

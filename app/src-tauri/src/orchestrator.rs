@@ -1,4 +1,5 @@
 use crate::native::PreferredTtsBackend;
+use crate::smart_turn::SmartTurnDetector;
 use fasttalk_audio::AudioEngine;
 use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, Message, MessageRole, SessionHistory,
@@ -7,6 +8,7 @@ use fasttalk_pipeline::{
     AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
     PipelineError, RealtimeAsrClient, TtsEvent,
 };
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::async_runtime::JoinHandle;
@@ -14,6 +16,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 const ENDPOINT_SILENCE: Duration = Duration::from_millis(300);
+const MAX_ENDPOINT_SILENCE: Duration = Duration::from_millis(1_200);
 const AUDIO_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const PLAYBACK_DRAIN_GUARD: Duration = Duration::from_millis(30);
 
@@ -44,7 +47,9 @@ pub fn start(
     engine: SharedEngine,
     audio: SharedAudio,
     tts_backend: PreferredTtsBackend,
-) -> ConversationController {
+    turn_detector_path: &Path,
+) -> Result<ConversationController, String> {
+    let turn_detector = SmartTurnDetector::new(turn_detector_path)?;
     let cancellation = CancellationToken::new();
     let task_cancellation = cancellation.clone();
     let (control, control_receiver) = mpsc::unbounded_channel();
@@ -56,6 +61,7 @@ pub fn start(
             task_cancellation,
             control_receiver,
             tts_backend,
+            turn_detector,
         )
         .await
             && !matches!(error, PipelineError::Cancelled)
@@ -70,11 +76,11 @@ pub fn start(
             );
         }
     });
-    ConversationController {
+    Ok(ConversationController {
         cancellation,
         control,
         task,
-    }
+    })
 }
 
 async fn run(
@@ -84,6 +90,7 @@ async fn run(
     cancellation: CancellationToken,
     mut control: mpsc::UnboundedReceiver<Control>,
     tts_backend: PreferredTtsBackend,
+    mut turn_detector: SmartTurnDetector,
 ) -> Result<(), PipelineError> {
     let asr = RealtimeAsrClient::new("ws://127.0.0.1:18081/v1/realtime")?;
     let (mut asr_sender, mut asr_receiver) = asr.connect().await?;
@@ -92,6 +99,7 @@ async fn run(
     let mut awaiting_commit = false;
     let mut turn: Option<(CancellationToken, JoinHandle<()>)> = None;
     let mut audio_samples = [0.0_f32; 1_600];
+    let mut turn_audio = Vec::with_capacity(16_000 * 8);
     let mut interval = tokio::time::interval(AUDIO_POLL_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -107,6 +115,7 @@ async fn run(
                 let (sample_count, speech_active) = read_audio(&audio, &mut audio_samples)?;
                 if sample_count > 0 && !awaiting_commit {
                     asr_sender.send_f32(&audio_samples[..sample_count]).await?;
+                    turn_audio.extend_from_slice(&audio_samples[..sample_count]);
                 }
 
                 let state = snapshot_state(&engine)?;
@@ -114,9 +123,15 @@ async fn run(
                 if decision.interrupt {
                     interrupt_turn(&app, &engine, &audio, &mut turn)?;
                 }
-                if decision.commit && !awaiting_commit {
+                let smart_turn_complete = decision.endpoint_check
+                    && turn_detector
+                        .is_complete(&turn_audio)
+                        .map_err(PipelineError::Protocol)?;
+                if (smart_turn_complete || decision.force_commit) && !awaiting_commit {
                     asr_sender.commit().await?;
                     awaiting_commit = true;
+                    turn_audio.clear();
+                    activity.committed();
                 }
             }
             event = asr_receiver.next_event() => {
@@ -561,7 +576,8 @@ async fn reap_finished_turn(turn: &mut Option<(CancellationToken, JoinHandle<()>
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct VoiceDecision {
     interrupt: bool,
-    commit: bool,
+    endpoint_check: bool,
+    force_commit: bool,
 }
 
 #[derive(Debug, Default)]
@@ -569,6 +585,7 @@ struct VoiceActivity {
     active: bool,
     speech_seen: bool,
     last_active: Option<Instant>,
+    endpoint_checked: bool,
 }
 
 impl VoiceActivity {
@@ -582,18 +599,33 @@ impl VoiceActivity {
         if active {
             self.speech_seen = true;
             self.last_active = Some(now);
+            self.endpoint_checked = false;
         }
         self.active = active;
-        let commit = self.speech_seen
+        let silence = self
+            .last_active
+            .map(|last_active| now.duration_since(last_active));
+        let endpoint_check = self.speech_seen
             && !active
-            && self
-                .last_active
-                .is_some_and(|last_active| now.duration_since(last_active) >= ENDPOINT_SILENCE);
-        if commit {
-            self.speech_seen = false;
-            self.last_active = None;
+            && !self.endpoint_checked
+            && silence.is_some_and(|silence| silence >= ENDPOINT_SILENCE);
+        if endpoint_check {
+            self.endpoint_checked = true;
         }
-        VoiceDecision { interrupt, commit }
+        let force_commit = self.speech_seen
+            && !active
+            && silence.is_some_and(|silence| silence >= MAX_ENDPOINT_SILENCE);
+        VoiceDecision {
+            interrupt,
+            endpoint_check,
+            force_commit,
+        }
+    }
+
+    fn committed(&mut self) {
+        self.speech_seen = false;
+        self.last_active = None;
+        self.endpoint_checked = false;
     }
 }
 
@@ -616,7 +648,7 @@ mod tests {
                     ConversationState::Listening,
                     start + Duration::from_millis(299)
                 )
-                .commit
+                .endpoint_check
         );
         assert!(
             activity
@@ -625,7 +657,39 @@ mod tests {
                     ConversationState::Listening,
                     start + Duration::from_millis(300)
                 )
-                .commit
+                .endpoint_check
+        );
+    }
+
+    #[test]
+    fn incomplete_turn_waits_for_more_speech_or_the_safety_timeout() {
+        let start = Instant::now();
+        let mut activity = VoiceActivity::default();
+        activity.update(true, ConversationState::Listening, start);
+        assert!(
+            activity
+                .update(
+                    false,
+                    ConversationState::Listening,
+                    start + ENDPOINT_SILENCE
+                )
+                .endpoint_check
+        );
+        let waiting = activity.update(
+            false,
+            ConversationState::Listening,
+            start + Duration::from_millis(600),
+        );
+        assert!(!waiting.endpoint_check);
+        assert!(!waiting.force_commit);
+        assert!(
+            activity
+                .update(
+                    false,
+                    ConversationState::Listening,
+                    start + MAX_ENDPOINT_SILENCE
+                )
+                .force_commit
         );
     }
 

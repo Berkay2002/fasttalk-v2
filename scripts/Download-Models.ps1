@@ -7,6 +7,8 @@ param(
         "magpie-tts-tokenizer",
         "nanocodec-22khz-f16",
         "kokoro-82m",
+        "silero-vad-16k-op15",
+        "smart-turn-v3.2-cpu",
         "qwen3.5-9b-q5-k-m"
     )
 )

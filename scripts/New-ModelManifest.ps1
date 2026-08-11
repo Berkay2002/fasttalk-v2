@@ -64,10 +64,12 @@ $asr = Get-Model "nemotron-3.5-asr-streaming-0.6b-q8"
 $magpie = Get-Model "magpie-tts-v2602-f16"
 $magpieTokenizer = Get-Model "magpie-tts-tokenizer"
 $codec = Get-Model "nanocodec-22khz-f16"
+$silero = Get-Model "silero-vad-16k-op15"
+$smartTurn = Get-Model "smart-turn-v3.2-cpu"
 
 $manifest = [ordered]@{
     schemaVersion = 1
-    release = "2026.08.11.1"
+    release = "2026.08.11.2"
     publicKeyId = "fasttalk-models-2026-01"
     models = @(
         [ordered]@{
@@ -132,6 +134,34 @@ $manifest = [ordered]@{
                 id = "nvidia-open-model-license"
                 name = "NVIDIA Open Model License"
                 url = "https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf"
+            }
+            postInstall = @()
+        },
+        [ordered]@{
+            id = "silero-vad"
+            displayName = "Silero VAD 16 kHz ONNX"
+            repository = $silero.repository
+            revision = $silero.revision
+            legacyRoot = ".cache/models/silero-vad"
+            artifacts = @(Get-Artifact ".cache/models/silero-vad" $silero)
+            license = [ordered]@{
+                id = "mit"
+                name = "MIT License"
+                url = "https://huggingface.co/istupakov/silero-vad-onnx/blob/b3e3ee3cce4c11ceb63b1a0b229d916069c1ddf6/LICENSE.txt"
+            }
+            postInstall = @()
+        },
+        [ordered]@{
+            id = "smart-turn"
+            displayName = "Smart Turn v3.2 CPU ONNX"
+            repository = $smartTurn.repository
+            revision = $smartTurn.revision
+            legacyRoot = ".cache/models/smart-turn"
+            artifacts = @(Get-Artifact ".cache/models/smart-turn" $smartTurn)
+            license = [ordered]@{
+                id = "bsd-2-clause"
+                name = "BSD 2-Clause License"
+                url = "https://github.com/pipecat-ai/smart-turn/blob/main/LICENSE"
             }
             postInstall = @()
         },

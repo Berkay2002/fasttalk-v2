@@ -39,6 +39,16 @@
         "groupId": "kokoro",
         "artifact": "",
         "legacyPath": ".cache/models/kokoro-sherpa-v1.0"
+      },
+      "vad": {
+        "groupId": "silero-vad",
+        "artifact": "silero_vad_16k_op15.onnx",
+        "legacyPath": ".cache/models/silero-vad/silero_vad_16k_op15.onnx"
+      },
+      "turnDetector": {
+        "groupId": "smart-turn",
+        "artifact": "smart-turn-v3.2-cpu.onnx",
+        "legacyPath": ".cache/models/smart-turn/smart-turn-v3.2-cpu.onnx"
       }
     }
   ]
