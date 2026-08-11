@@ -34,11 +34,12 @@ use `-Unsigned -SkipNativeBuild`. Validate the resulting installer with
 Models are downloaded after installation or imported from a verified offline
 pack. They are not embedded in the installer.
 
-The current signed model release selects Qwen3.5 9B Q5_K_M. The planned
-Qwen3.6 27B profile missed the 20 token/s gate under representative desktop
-load, while this compatibility profile passed the throughput and latency gates.
-Regenerate a manifest with `New-ModelManifest.ps1`, then sign it with an
-explicit private seed using `Sign-ModelManifest.ps1`.
+The current signed model release selects HauhauCS Qwen3.5 9B Q6_K with one
+32K context slot. It is an aggressively less-censored variant selected by the
+local user after the recorded comparison in
+`benchmarks/2026-08-11-qwen35-decensor`. Regenerate a manifest with
+`New-ModelManifest.ps1`, then sign it with an explicit private seed using
+`Sign-ModelManifest.ps1`.
 
 Hardware and model runtime choices are kept in
 `config/runtime-profiles.json`. A profile owns its model bindings, llama.cpp

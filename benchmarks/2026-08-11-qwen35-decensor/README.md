@@ -8,10 +8,13 @@ voice pipeline?
 
 ## Decision
 
-Keep `official-qwen35-9b-q5-k-m-32k-p1` as the default. If HauhauCS Q6_K is
-integrated later, expose it only as an explicit local research profile with a
-plain warning that the serious-harm boundary is absent. Do not adopt the tested
-Huihui or Heretic builds.
+The benchmark recommendation was to keep
+`official-qwen35-9b-q5-k-m-32k-p1` as the default and expose HauhauCS Q6_K only
+as an explicit local research profile. After reviewing these results, the local
+owner explicitly chose Hauhau as the FastTalk default. The signed model release
+and runtime profile now follow that decision. This report retains the measured
+recommendation and risks so the preference override remains auditable. The
+tested Huihui and Heretic builds remain rejected.
 
 Hauhau is not rejected. It was the only model to pass all 21 fixed checks and
 it answered the synthetic recovery-code recall prompt that the official model

@@ -1,47 +1,26 @@
 {
   "schemaVersion": 1,
-  "release": "2026.08.11.3",
+  "release": "2026.08.11.4",
   "publicKeyId": "fasttalk-models-2026-01",
   "models": [
     {
       "id": "qwen",
-      "displayName": "Qwen3.5 9B Q5_K_M compatibility profile",
-      "repository": "unsloth/Qwen3.5-9B-GGUF",
-      "revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
-      "legacyRoot": ".cache/models/qwen3.5-9b",
+      "displayName": "HauhauCS Qwen3.5 9B Q6_K",
+      "repository": "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive",
+      "revision": "0a41c68809d375475f954be12ba7c40efa56c2a9",
+      "legacyRoot": ".cache/models/hauhau-qwen3.5-9b",
       "artifacts": [
         {
-          "remotePath": "Qwen3.5-9B-Q5_K_M.gguf",
-          "path": "Qwen3.5-9B-Q5_K_M.gguf",
-          "sizeBytes": 6577841376,
-          "sha256": "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
+          "remotePath": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+          "path": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+          "sizeBytes": 7359259008,
+          "sha256": "c0ba7beb68fd3fe47891bd549486d38dcf62d00817296ea314ad37017f5a4986"
         }
       ],
       "license": {
         "id": "apache-2.0",
         "name": "Apache License 2.0",
         "url": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
-      },
-      "postInstall": []
-    },
-    {
-      "id": "nemotron-asr",
-      "displayName": "Nemotron 3.5 ASR Streaming 0.6B Q8",
-      "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
-      "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
-      "legacyRoot": ".cache/models/nemotron-asr",
-      "artifacts": [
-        {
-          "remotePath": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
-          "path": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
-          "sizeBytes": 741548352,
-          "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae"
-        }
-      ],
-      "license": {
-        "id": "openmdw-1.1",
-        "name": "Open Model and Data Weights License 1.1",
-        "url": "https://openmdw.ai/license/1-1/"
       },
       "postInstall": []
     },

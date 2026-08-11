@@ -580,10 +580,20 @@ mod tests {
 
     #[test]
     fn named_profile_selects_the_requested_model_bindings() {
-        let profile = named_runtime_profile("rtx3090-qwen35-q5-parakeet-32k").unwrap();
+        let profile = named_runtime_profile("rtx3090-hauhau-q6-parakeet-32k").unwrap();
         assert_eq!(profile.llm.context_size, 32_768);
         assert_eq!(profile.llm.parallel, 1);
+        assert_eq!(
+            profile.llm.model.artifact,
+            "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+        );
+        assert_eq!(
+            profile.measured_worker_memory_mi_b.with_preferred_tts,
+            10_405
+        );
+        assert_eq!(profile.measured_worker_memory_mi_b.with_fallback_tts, 9_468);
         assert_eq!(profile.asr.group_id, "parakeet-ctc");
+        assert_eq!(default_runtime_profile().id, profile.id);
         assert!(named_runtime_profile("missing-profile").is_err());
     }
 

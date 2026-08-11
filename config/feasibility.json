@@ -71,6 +71,16 @@
       "sha256": "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
     },
     {
+      "id": "hauhau-qwen3.5-9b-q6-k",
+      "repository": "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive",
+      "revision": "0a41c68809d375475f954be12ba7c40efa56c2a9",
+      "environmentVariable": "FASTTALK_HAUHAU_QWEN_MODEL",
+      "defaultPath": ".cache/models/hauhau-qwen3.5-9b/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+      "fileName": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+      "sizeBytes": 7359259008,
+      "sha256": "c0ba7beb68fd3fe47891bd549486d38dcf62d00817296ea314ad37017f5a4986"
+    },
+    {
       "id": "nemotron-3.5-asr-streaming-0.6b-q8",
       "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
       "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",

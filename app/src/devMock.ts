@@ -32,7 +32,7 @@ function runtimeState(state: WorkerStatus["state"]): NativeRuntimeStatus {
     llm: worker("llm", state),
     speech: worker("speech", state),
     kokoro: worker("kokoro", state),
-    profileId: "rtx3090-qwen35-q5-magpie",
+    profileId: "rtx3090-hauhau-q6-parakeet-32k",
     ttsBackend: "magpie",
     vramAdmission: {
       startupAdmitted: state !== "stopped",
@@ -40,10 +40,10 @@ function runtimeState(state: WorkerStatus["state"]): NativeRuntimeStatus {
       totalMib: 24_576,
       projectedWarmedMib: 12_000,
       limitMib: 23_040,
-      profileId: "rtx3090-qwen35-q5-magpie",
+      profileId: "rtx3090-hauhau-q6-parakeet-32k",
       reserveMib: 1_536,
       backend: "magpie",
-      reason: "Qwen3.5 compatibility profile leaves room for warmed Magpie TTS",
+      reason: "Hauhau Q6 profile leaves the configured GPU reserve available",
     },
   };
 }
@@ -60,10 +60,12 @@ const devices = {
 };
 
 const models: ModelStatus[] = [
-  ["qwen", "Qwen3.5 9B Q5_K_M compatibility profile", "Apache License 2.0"],
-  ["nemotron-asr", "Nemotron 3.5 ASR", "OpenMDW 1.1"],
+  ["qwen", "HauhauCS Qwen3.5 9B Q6_K", "Apache License 2.0"],
+  ["parakeet-ctc", "Parakeet CTC 1.1B Q8", "CC BY 4.0"],
   ["magpie-tts", "Magpie TTS", "NVIDIA Open Model License"],
   ["nanocodec", "NVIDIA NanoCodec", "NVIDIA Open Model License"],
+  ["silero-vad", "Silero VAD", "MIT License"],
+  ["smart-turn", "Smart Turn v3.2", "BSD 2-Clause License"],
   ["kokoro", "Kokoro 82M INT8", "Apache License 2.0"],
 ].map(([id, displayName, licenseName]) => ({
   id,

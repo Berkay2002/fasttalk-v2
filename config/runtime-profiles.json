@@ -1,69 +1,20 @@
 {
   "schemaVersion": 1,
-  "defaultProfile": "rtx3090-qwen35-q5-parakeet-32k",
+  "defaultProfile": "rtx3090-hauhau-q6-parakeet-32k",
   "profiles": [
     {
-      "id": "rtx3090-qwen35-q5-magpie",
-      "displayName": "RTX 3090 quality profile",
+      "id": "rtx3090-hauhau-q6-parakeet-32k",
+      "displayName": "RTX 3090 Hauhau Q6 32K profile",
       "minimumGpuMemoryMiB": 24576,
       "reserveGpuMemoryMiB": 1536,
       "measuredWorkerMemoryMiB": {
-        "withPreferredTts": 8857,
-        "withFallbackTts": 7902
+        "withPreferredTts": 10405,
+        "withFallbackTts": 9468
       },
       "llm": {
         "groupId": "qwen",
-        "artifact": "Qwen3.5-9B-Q5_K_M.gguf",
-        "legacyPath": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
-        "contextSize": 16384,
-        "parallel": 4
-      },
-      "asr": {
-        "groupId": "nemotron-asr",
-        "artifact": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
-        "legacyPath": ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
-      },
-      "tts": {
-        "groupId": "magpie-tts",
-        "artifact": "magpie_tts_multilingual_357m.v2602.f16.gguf",
-        "legacyPath": ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
-        "tokenizerArtifact": "extracted",
-        "tokenizerLegacyPath": ".cache/models/magpie-tts/extracted"
-      },
-      "codec": {
-        "groupId": "nanocodec",
-        "artifact": "nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
-        "legacyPath": ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"
-      },
-      "fallbackTts": {
-        "groupId": "kokoro",
-        "artifact": "",
-        "legacyPath": ".cache/models/kokoro-sherpa-v1.0"
-      },
-      "vad": {
-        "groupId": "silero-vad",
-        "artifact": "silero_vad_16k_op15.onnx",
-        "legacyPath": ".cache/models/silero-vad/silero_vad_16k_op15.onnx"
-      },
-      "turnDetector": {
-        "groupId": "smart-turn",
-        "artifact": "smart-turn-v3.2-cpu.onnx",
-        "legacyPath": ".cache/models/smart-turn/smart-turn-v3.2-cpu.onnx"
-      }
-    },
-    {
-      "id": "rtx3090-qwen35-q5-parakeet-32k",
-      "displayName": "RTX 3090 balanced 32K profile",
-      "minimumGpuMemoryMiB": 24576,
-      "reserveGpuMemoryMiB": 1536,
-      "measuredWorkerMemoryMiB": {
-        "withPreferredTts": 9908,
-        "withFallbackTts": 8854
-      },
-      "llm": {
-        "groupId": "qwen",
-        "artifact": "Qwen3.5-9B-Q5_K_M.gguf",
-        "legacyPath": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+        "artifact": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+        "legacyPath": ".cache/models/hauhau-qwen3.5-9b/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
         "contextSize": 32768,
         "parallel": 1
       },

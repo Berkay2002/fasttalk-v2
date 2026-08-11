@@ -59,8 +59,8 @@ function Get-TreeArtifacts([string]$Root) {
     })
 }
 
-$qwen = Get-Model "qwen3.5-9b-q5-k-m"
-$asr = Get-Model "nemotron-3.5-asr-streaming-0.6b-q8"
+$qwen = Get-Model "hauhau-qwen3.5-9b-q6-k"
+$parakeet = Get-Model "parakeet-ctc-1.1b-q8"
 $magpie = Get-Model "magpie-tts-v2602-f16"
 $magpieTokenizer = Get-Model "magpie-tts-tokenizer"
 $codec = Get-Model "nanocodec-22khz-f16"
@@ -69,16 +69,16 @@ $smartTurn = Get-Model "smart-turn-v3.2-cpu"
 
 $manifest = [ordered]@{
     schemaVersion = 1
-    release = "2026.08.11.2"
+    release = "2026.08.11.4"
     publicKeyId = "fasttalk-models-2026-01"
     models = @(
         [ordered]@{
             id = "qwen"
-            displayName = "Qwen3.5 9B Q5_K_M compatibility profile"
+            displayName = "HauhauCS Qwen3.5 9B Q6_K"
             repository = $qwen.repository
             revision = $qwen.revision
-            legacyRoot = ".cache/models/qwen3.5-9b"
-            artifacts = @(Get-Artifact ".cache/models/qwen3.5-9b" $qwen)
+            legacyRoot = ".cache/models/hauhau-qwen3.5-9b"
+            artifacts = @(Get-Artifact ".cache/models/hauhau-qwen3.5-9b" $qwen)
             license = [ordered]@{
                 id = "apache-2.0"
                 name = "Apache License 2.0"
@@ -87,16 +87,16 @@ $manifest = [ordered]@{
             postInstall = @()
         },
         [ordered]@{
-            id = "nemotron-asr"
-            displayName = "Nemotron 3.5 ASR Streaming 0.6B Q8"
-            repository = $asr.repository
-            revision = $asr.revision
-            legacyRoot = ".cache/models/nemotron-asr"
-            artifacts = @(Get-Artifact ".cache/models/nemotron-asr" $asr)
+            id = "parakeet-ctc"
+            displayName = "Parakeet CTC 1.1B Q8 English ASR"
+            repository = $parakeet.repository
+            revision = $parakeet.revision
+            legacyRoot = ".cache/models/parakeet-ctc"
+            artifacts = @(Get-Artifact ".cache/models/parakeet-ctc" $parakeet)
             license = [ordered]@{
-                id = "openmdw-1.1"
-                name = "Open Model and Data Weights License 1.1"
-                url = "https://openmdw.ai/license/1-1/"
+                id = "cc-by-4.0"
+                name = "Creative Commons Attribution 4.0 International"
+                url = "https://creativecommons.org/licenses/by/4.0/"
             }
             postInstall = @()
         },
