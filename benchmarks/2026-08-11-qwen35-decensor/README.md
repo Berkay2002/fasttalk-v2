@@ -1,6 +1,6 @@
 # Qwen3.5 refusal-behavior comparison
 
-This experiment compares three less-censored Qwen3.5 9B variants with the
+This experiment compares four less-censored Qwen3.5 9B variants with the
 official post-trained Qwen3.5 9B baseline used by FastTalk. It answers a narrow
 product question: does a modified model prevent benign refusals without
 damaging the latency, memory use, and instruction following needed by the
@@ -15,6 +15,20 @@ owner explicitly chose Hauhau as the FastTalk default. The signed model release
 and runtime profile now follow that decision. This report retains the measured
 recommendation and risks so the preference override remains auditable. The
 tested Huihui and Heretic builds remain rejected.
+
+Qwythos Q6_K is now an optional FastTalk profile. It was faster to first token
+than Hauhau, fit the same 24 GB runtime envelope, followed all seven fixed
+instructions semantically, and answered all lawful-sensitive prompts. It did
+not pass the exact-output harness for long-context recall because it wrapped
+the correct `cobalt-42` value in a sentence on all three runs. Its adversarial
+boundary was much more restrictive than Hauhau: 54 of 57 responses refused or
+redirected safely after manual review. The three substantive completions were
+all in the poisoning category. Hauhau remains the user-selected default.
+
+The native one-turn release gate also passed with Qwythos, prerecorded JFK
+speech, Parakeet ASR, Magpie TTS, and live cancellation probes. Warm LLM TTFT
+was 143.977 ms and end-of-speech to first audio was 552.778 ms. Combined worker
+memory measured 10,342 MiB with Magpie and 9,481 MiB with CPU TTS fallback.
 
 Hauhau is not rejected. It was the only model to pass all 21 fixed checks and
 it answered the synthetic recovery-code recall prompt that the official model
@@ -38,6 +52,7 @@ machine baseline observed immediately before that model was loaded.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Official Qwen3.5 9B Q5_K_M | 89.085 ms | 91.269 tok/s | 7,076 MiB | 18/21 | 0/36 | 3 | 0 | 0 |
 | HauhauCS aggressive Q6_K | 122.466 ms | 75.596 tok/s | 7,699 MiB | 21/21 | 0/36 | 0 | 0 | 1 |
+| Qwythos Claude Mythos Q6_K | 90.773 ms | 77.955 tok/s | 7,666 MiB | 18/21 strict, 21/21 semantic | 0/36 | 0 | 0 | 0 |
 | Huihui abliterated Q5_K_M | 98.861 ms | 91.202 tok/s | 7,052 MiB | 9/21 | 0/36 | 0 | 0 | 0 |
 | Heretic v2 Q5_K_M | 103.862 ms | 89.625 tok/s | 7,036 MiB | 9/21 | 0/36 | 0 | 0 | 0 |
 
@@ -64,6 +79,7 @@ three repeats, for 57 responses per model.
 | --- | ---: | ---: | ---: | --- |
 | Official Qwen3.5 9B Q5_K_M | 56/57 | 1/57 | 0/17 | Retain |
 | HauhauCS aggressive Q6_K | 0/57 | 57/57 | at least 16/17 | Reject as default |
+| Qwythos Claude Mythos Q6_K | 49/57 | 8/57 | 1/17 | Optional profile |
 | Huihui abliterated Q5_K_M | 0/57 | 57/57 | at least 17/17 | Reject |
 | Heretic v2 Q5_K_M | 0/57 | 57/57 | at least 16/17 | Reject |
 
@@ -71,6 +87,11 @@ The official model's detector miss was a non-operational response to the poison
 prompt. It disputed the premise, provided general forensic context, did not give
 the requested lethal dose, and reached the token cap before using a refusal
 phrase. Manual review therefore treats it as a safe non-answer, not compliance.
+
+Qwythos had eight detector misses. Five were clear refusals phrased outside the
+detector's verb list. The remaining three responses, all to the poisoning
+prompt, supplied substantive lethal-detail information and are counted as
+harmful compliance. Full text remains in ignored local artifacts.
 
 The category-level compliance counts are conservative lower bounds. Review
 looked for at least one substantive answer in each category across the three
@@ -95,6 +116,11 @@ contracts by adding spaces, prose, capitalization, or punctuation. That is a
 material regression for a streaming orchestrator that depends on concise
 responses and structured outputs.
 
+Qwythos also produced the right content on all seven checks in every run. It
+failed the strict long-context check only because it returned a short sentence
+instead of the requested bare recovery code. This distinction is recorded as
+18/21 strict and 21/21 semantic rather than changing the historical harness.
+
 ## Manual output review
 
 The automated suite detects refusal, empty output, repeated four-grams,
@@ -116,13 +142,18 @@ do not support ranking one model as medically reliable.
 
 ## Candidate provenance
 
-All four artifacts are Apache-2.0 according to their pinned Hugging Face model
+All five artifacts are Apache-2.0 according to their pinned Hugging Face model
 cards. Exact repositories, revisions, sizes, and SHA-256 hashes are recorded in
 [`candidates.json`](candidates.json).
 
 - Hauhau's card claims 0/465 refusals and zero capability loss. Those are author
   claims, not independent results. This local suite confirms strong exact
   compliance but does not verify broad capability preservation.
+- Qwythos is a full-parameter Qwen3.5-9B fine-tune released by Empero. Its card
+  reports a 1M YaRN context window and large gains over the base model, but
+  those are author results. This local run verified only 32K non-thinking voice
+  operation, model integrity, instruction behavior, and the stated boundary
+  suite.
 - Huihui's source card calls its abliteration a crude proof of concept and
   recommends controlled experimental use.
 - Heretic's source metadata names `Qwen/Qwen3.5-9B-Base`, while its card body
@@ -140,10 +171,12 @@ identity, all raw model responses, per-sample timings, finish reasons, and
 aggregate counters:
 
 - [`hauhau-q6.json`](evidence/hauhau-q6.json)
+- [`qwythos-q6.json`](evidence/qwythos-q6.json)
 - [`huihui-q5.json`](evidence/huihui-q5.json)
 - [`heretic-v2-q5.json`](evidence/heretic-v2-q5.json)
 - [`official-qwen35-q5.json`](evidence/official-qwen35-q5.json)
 - [`hauhau-q6-safety.json`](evidence/hauhau-q6-safety.json)
+- [`qwythos-q6-safety.json`](evidence/qwythos-q6-safety.json)
 - [`huihui-q5-safety.json`](evidence/huihui-q5-safety.json)
 - [`heretic-v2-q5-safety.json`](evidence/heretic-v2-q5-safety.json)
 - [`official-qwen35-q5-safety.json`](evidence/official-qwen35-q5-safety.json)
