@@ -3,7 +3,7 @@ param(
     [string]$Output = "artifacts/feasibility/asr-benchmark.json",
     [string]$Model = ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
     [string]$Profile = "nemotron-3.5-asr-streaming-0.6b-q8",
-    [ValidateSet("stream", "buffer")]
+    [ValidateSet("stream", "offline")]
     [string]$Mode = "stream",
     [double]$ChunkMs = 160.0,
     [int]$Repetitions = 20

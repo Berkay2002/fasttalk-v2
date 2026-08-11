@@ -100,6 +100,19 @@ function Measure-FirstToken {
     throw "Streaming response ended before a content token arrived."
 }
 
+function Invoke-Completion([object[]]$Messages, [int]$MaxTokens = 64) {
+    $payload = @{
+        model = "fasttalk-local"
+        messages = $Messages
+        max_tokens = $MaxTokens
+        temperature = 0
+        seed = 42
+    } | ConvertTo-Json -Depth 8 -Compress
+    $response = Invoke-RestMethod $endpoint -Method Post -ContentType "application/json" `
+        -Body $payload -TimeoutSec 120
+    return [string]$response.choices[0].message.content
+}
+
 try {
     Wait-Ready
 
@@ -132,6 +145,39 @@ try {
         [math]::Round($response.timings.predicted_per_second, 3)
     }
 
+    $qualityCases = @(
+        [ordered]@{
+            id = "exact-instruction"
+            response = Invoke-Completion @(@{ role = "user"; content = "Reply with exactly FASTTALK_OK and nothing else." }) 16
+            expected = "FASTTALK_OK"
+            method = "exact"
+        },
+        [ordered]@{
+            id = "conversation-recall"
+            response = Invoke-Completion @(
+                @{ role = "user"; content = "Remember that my project codeword is amber-17." },
+                @{ role = "assistant"; content = "Understood." },
+                @{ role = "user"; content = "What is the project codeword? Reply with only the codeword." }
+            ) 16
+            expected = "amber-17"
+            method = "exact-case-insensitive"
+        },
+        [ordered]@{
+            id = "format-constraint"
+            response = Invoke-Completion @(@{ role = "user"; content = "Return exactly three lowercase color names separated by commas, with no spaces or other text." }) 24
+            expected = "^[a-z]+,[a-z]+,[a-z]+$"
+            method = "regex"
+        }
+    )
+    foreach ($case in $qualityCases) {
+        $normalized = $case.response.Trim()
+        $case.pass = switch ($case.method) {
+            "exact" { $normalized -ceq $case.expected }
+            "exact-case-insensitive" { $normalized -ieq $case.expected }
+            "regex" { $normalized -cmatch $case.expected }
+        }
+    }
+
     $memoryUsed = [double](nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | Select-Object -First 1)
     $report = [ordered]@{
         schemaVersion = 1
@@ -141,6 +187,9 @@ try {
         parallel = $Parallel
         warmLlmFirstTokenMs = @($ttft)
         generationTokensPerSecond = @($throughput)
+        qualityCases = @($qualityCases)
+        qualityPassCount = @($qualityCases | Where-Object pass).Count
+        qualityCaseCount = $qualityCases.Count
         warmedGpuMemoryMiB = $memoryUsed
     }
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outputPath -Encoding utf8
