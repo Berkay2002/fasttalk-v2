@@ -1,8 +1,13 @@
 {
   "schemaVersion": 1,
   "runId": "2026-08-11-rtx3090-matrix",
-  "sourceCommit": "63ff9376317a9974a9de4fd6cf0c8cd1b2389991",
+  "sourceCommit": "6738a72b8ac2fe6cd39ff4da4f8a9f751b24d7a9",
   "files": [
+    {
+      "file": "installer-sanitized-final.json",
+      "bytes": 360,
+      "sha256": "0e2c69de500ef6730f0322f2d432462c95380ade42bcdfec4010d4ec742351b5"
+    },
     {
       "file": "kokoro-cpu.json",
       "bytes": 275,
@@ -112,6 +117,11 @@
       "file": "selected-conversation-30-minute-soak.json",
       "bytes": 1932,
       "sha256": "d5da69ec4524e3635e9680a2ece353370f02c1342d0360db0b8b1d406f852d9f"
+    },
+    {
+      "file": "unsigned-release-manifest.json",
+      "bytes": 7891,
+      "sha256": "0f7641871ea3b2bd1e3450386e0b4cdc9b776b7488608257aa44fbd8ec30e883"
     },
     {
       "file": "tts-listening/answer-key.json",
