@@ -80,6 +80,7 @@ pub enum PreferredTtsBackend {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VramAdmission {
+    pub startup_admitted: bool,
     pub profile_id: String,
     pub total_mib: Option<u64>,
     pub current_used_mib: Option<u64>,
@@ -169,6 +170,12 @@ impl NativeRuntime {
             return self.poll();
         }
         self.vram_admission = admit_vram(&self.profile);
+        if !self.vram_admission.startup_admitted {
+            return Err(SupervisorError::InvalidSpec(format!(
+                "runtime profile {} was not admitted: {}",
+                self.profile.id, self.vram_admission.reason
+            )));
+        }
         let mut llm = self.build_llm()?;
         let mut speech = self.build_speech()?;
         let mut kokoro = self.build_kokoro()?;
@@ -411,6 +418,7 @@ fn admission_for(profile: &RuntimeProfile, memory: Option<GpuMemory>) -> VramAdm
         .saturating_add(profile.measured_worker_memory_mi_b.with_preferred_tts);
     if memory.total_mib >= profile.minimum_gpu_memory_mi_b && projected_warmed_mib <= limit_mib {
         VramAdmission {
+            startup_admitted: true,
             profile_id: profile.id.clone(),
             total_mib: Some(memory.total_mib),
             current_used_mib: Some(memory.used_mib),
@@ -427,7 +435,10 @@ fn admission_for(profile: &RuntimeProfile, memory: Option<GpuMemory>) -> VramAdm
         let projected_warmed_mib = memory
             .used_mib
             .saturating_add(profile.measured_worker_memory_mi_b.with_fallback_tts);
+        let startup_admitted = memory.total_mib >= profile.minimum_gpu_memory_mi_b
+            && projected_warmed_mib <= limit_mib;
         VramAdmission {
+            startup_admitted,
             profile_id: profile.id.clone(),
             total_mib: Some(memory.total_mib),
             current_used_mib: Some(memory.used_mib),
@@ -435,14 +446,26 @@ fn admission_for(profile: &RuntimeProfile, memory: Option<GpuMemory>) -> VramAdm
             limit_mib,
             reserve_mib: profile.reserve_gpu_memory_mi_b,
             backend: PreferredTtsBackend::Kokoro,
-            reason: "the selected profile does not fit with GPU TTS and its configured reserve"
-                .to_owned(),
+            reason: if startup_admitted {
+                "GPU TTS does not fit with the configured reserve, so CPU TTS was selected"
+                    .to_owned()
+            } else if memory.total_mib < profile.minimum_gpu_memory_mi_b {
+                format!(
+                    "the GPU has {} MiB, below the profile minimum of {} MiB",
+                    memory.total_mib, profile.minimum_gpu_memory_mi_b
+                )
+            } else {
+                format!(
+                    "the fallback would use {projected_warmed_mib} MiB, above the {limit_mib} MiB admission limit"
+                )
+            },
         }
     }
 }
 
 fn fallback_admission(profile: &RuntimeProfile, reason: &str) -> VramAdmission {
     VramAdmission {
+        startup_admitted: false,
         profile_id: profile.id.clone(),
         total_mib: None,
         current_used_mib: None,
@@ -526,6 +549,7 @@ mod tests {
             }),
         );
         assert_eq!(exact.backend, PreferredTtsBackend::Magpie);
+        assert!(exact.startup_admitted);
         assert_eq!(exact.projected_warmed_mib, Some(limit));
 
         let used_mib = limit - profile.measured_worker_memory_mi_b.with_preferred_tts + 1;
@@ -537,14 +561,32 @@ mod tests {
             }),
         );
         assert_eq!(over.backend, PreferredTtsBackend::Kokoro);
+        assert!(over.startup_admitted);
         assert_eq!(
             over.projected_warmed_mib,
             Some(used_mib + profile.measured_worker_memory_mi_b.with_fallback_tts)
         );
-        assert_eq!(
-            admission_for(&profile, None).backend,
-            PreferredTtsBackend::Kokoro
+        let unmeasured = admission_for(&profile, None);
+        assert_eq!(unmeasured.backend, PreferredTtsBackend::Kokoro);
+        assert!(!unmeasured.startup_admitted);
+
+        let undersized = admission_for(
+            &profile,
+            Some(GpuMemory {
+                total_mib: profile.minimum_gpu_memory_mi_b - 1,
+                used_mib: 0,
+            }),
         );
+        assert!(!undersized.startup_admitted);
+
+        let fallback_over_limit = admission_for(
+            &profile,
+            Some(GpuMemory {
+                total_mib: profile.minimum_gpu_memory_mi_b,
+                used_mib: limit - profile.measured_worker_memory_mi_b.with_fallback_tts + 1,
+            }),
+        );
+        assert!(!fallback_over_limit.startup_admitted);
 
         let larger_gpu = admission_for(
             &profile,
