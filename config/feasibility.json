@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "sourceArtifact": {
     "path": "fasttalk-v2-architecture-plan.html",
-    "sha256": "d939a5b3b7114ade5bdd46c1e158b179b37443f8174babcbe085db97ce7e03ab"
+    "sha256": "fcb2d2d5a34d8beb9ccc87b3a88ff6345ca79aba19b1ce72006738dd92f809f2"
   },
   "target": {
     "minimumWindowsBuild": 22000,
@@ -79,6 +79,16 @@
       "fileName": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
       "sizeBytes": 741548352,
       "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae"
+    },
+    {
+      "id": "parakeet-ctc-1.1b-q8",
+      "repository": "nvidia/parakeet-ctc-1.1b",
+      "revision": "20e63a0fed6aedba145b74b826dbd41df0941730",
+      "environmentVariable": "FASTTALK_PARAKEET_ASR_MODEL",
+      "defaultPath": ".cache/models/parakeet-ctc/parakeet-ctc-1.1b.q8_0.gguf",
+      "fileName": "parakeet-ctc-1.1b.q8_0.gguf",
+      "sizeBytes": 1178100960,
+      "sha256": "6584fc0fdacf1c220401ea4c3a1d5b44454b655c141cb8672178072c203d92b8"
     },
     {
       "id": "magpie-tts-v2602-f16",

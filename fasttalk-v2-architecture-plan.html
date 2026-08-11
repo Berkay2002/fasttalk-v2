@@ -163,9 +163,9 @@
         <div class="arrow">→</div>
         <div class="node">VAD + turn<br><small>Silero + Smart Turn</small></div>
         <div class="arrow">→</div>
-        <div class="node">Streaming ASR<br><small>Nemotron 3.5</small></div>
+        <div class="node">Streaming ASR<br><small>Parakeet CTC 1.1B Q8</small></div>
         <div class="arrow">→</div>
-        <div class="node">Local LLM<br><small>Qwen3.6 27B</small></div>
+        <div class="node">Local LLM<br><small>Qwen3.5 9B Q5 · true 32K</small></div>
       </div>
       <div class="pipeline" style="margin-top:8px; grid-template-columns: 1fr 48px 1fr 48px 1fr;">
         <div class="node">Sentence / clause stream</div>
@@ -183,8 +183,9 @@
       <table>
         <thead><tr><th>Candidate</th><th>Strength</th><th>Constraint</th><th>Decision</th></tr></thead>
         <tbody>
-          <tr><td>Nemotron 3.5 ASR Streaming 0.6B</td><td>Native cache-aware streaming, punctuation, capitalization, multilingual, official Q8 GGUF</td><td>Very new native runtime requires an early packaging spike</td><td class="good">Default</td></tr>
-          <tr><td>Nemotron Speech Streaming EN 0.6B</td><td>Strong English streaming with configurable 80–1120 ms chunks</td><td>English only</td><td class="maybe">English benchmark</td></tr>
+          <tr><td>Nemotron 3.5 ASR Streaming 0.6B</td><td>Native cache-aware streaming, punctuation, capitalization, multilingual, official Q8 GGUF</td><td>6.78% WER on the small English regression corpus</td><td class="maybe">Measured control</td></tr>
+          <tr><td>Nemotron Speech Streaming EN 0.6B</td><td>Strong English streaming with configurable 80–1120 ms chunks</td><td>Matched the control's 6.78% regression-corpus WER while running slightly slower</td><td class="reject">Dominated</td></tr>
+          <tr><td>Parakeet CTC 1.1B Q8</td><td>1.69% WER on the six prerecorded English fixtures and native GGUF compatibility</td><td>English only and lower-case output; slower than Nemotron but still far inside the latency gate</td><td class="good">Selected</td></tr>
           <tr><td>Whisper large-v3-turbo</td><td>Mature ecosystem, broad languages, timestamps</td><td>Windowed pseudo-streaming rather than a native streaming model</td><td class="maybe">Fallback reference</td></tr>
           <tr><td>Parakeet TDT 0.6B v3</td><td>Excellent offline throughput and European-language coverage</td><td>NeMo-Speech.cpp rejects streaming requests for this checkpoint</td><td class="maybe">Offline benchmark</td></tr>
           <tr><td>Cohere Transcribe 03-2026</td><td>Strong 2B offline transcription accuracy</td><td>No native streaming; official WebGPU demo records the complete clip first</td><td class="reject">Not v1</td></tr>
@@ -196,9 +197,11 @@
       <table>
         <thead><tr><th>Profile</th><th>Quant artifact</th><th>Use</th><th>Decision</th></tr></thead>
         <tbody>
-          <tr><td>Qwen3.6-27B</td><td>Q4_K_M · 16.82 GB</td><td>Text-only, non-thinking, 16K context</td><td class="good">Preferred</td></tr>
+          <tr><td>Qwen3.6-27B</td><td>Q4_K_M · 16.82 GB</td><td>17.197 tok/s minimum in the representative run</td><td class="reject">Below speed gate</td></tr>
           <tr><td>Qwen3.6-27B</td><td>Q5_K_M · 19.51 GB</td><td>Higher precision but too little shared-GPU headroom</td><td class="reject">Reject</td></tr>
-          <tr><td>Qwen3.5-9B</td><td>Q5_K_M · 6.58 GB</td><td>Fallback when the 27B profile misses memory or latency gates</td><td class="maybe">Compatibility</td></tr>
+          <tr><td>Qwen3.5-9B</td><td>Q5_K_M · 6.58 GB</td><td>About 50 tok/s, 7/7 fixed checks, true 32K single-session context</td><td class="good">Selected</td></tr>
+          <tr><td>Qwen3.5-9B</td><td>Q8_0 · 9.53 GB</td><td>Matched Q5 on 7/7 checks but fell to about 38.5 tok/s and used 2.44 GiB more VRAM</td><td class="reject">Dominated</td></tr>
+          <tr><td>Qwen3-14B</td><td>Q5_K_M · 10.51 GB</td><td>About 30 tok/s and 6/7 fixed checks at true 32K</td><td class="reject">Dominated</td></tr>
         </tbody>
       </table>
 
@@ -208,6 +211,8 @@
         <tbody>
           <tr><td>Magpie v2602 + NanoCodec</td><td>True streamed codec output, fixed built-in voices, same native service as ASR</td><td>Consumes some shared VRAM; current C++ runtime supports v2602 rather than v2607</td><td class="good">Preferred</td></tr>
           <tr><td>Kokoro-82M Q8</td><td>Small, Apache-2.0, many fixed voices, can run on CPU</td><td>Phrase-level output rather than genuine acoustic streaming</td><td class="maybe">Automatic fallback</td></tr>
+          <tr><td>VibeVoice Realtime 0.5B</td><td>English streaming text input and a compact checkpoint</td><td>Requires a separate Python/PyTorch VibeVoice serving stack</td><td class="reject">Deferred runtime</td></tr>
+          <tr><td>Qwen3-TTS 0.6B / 1.7B</td><td>Multilingual streaming generation and stronger quality potential</td><td>Requires the unrelated Python <code>qwen-tts</code>, PyTorch, and FlashAttention stack</td><td class="reject">Deferred runtime</td></tr>
           <tr><td>Chatterbox Turbo</td><td>Natural voice, expressive tags, cloning</td><td>No proven official local streaming path; cloning is not required</td><td class="reject">Future benchmark</td></tr>
           <tr><td>XTTS v2</td><td>Streaming and multilingual voice cloning</td><td>Noncommercial checkpoint license and older stack</td><td class="reject">Reject</td></tr>
           <tr><td>Fish Audio S2-Pro</td><td>Expressive and multilingual</td><td>Officially expects at least 24 GB VRAM and Linux/WSL; consumes the whole GPU budget</td><td class="reject">Reject</td></tr>
@@ -220,9 +225,9 @@
       <div class="grid">
         <article class="card wide">
           <div class="budget">
-            <div class="budget-row"><div class="budget-label"><span>Qwen3.5 + ASR measured worker delta</span><strong>7.90 GB</strong></div><div class="bar"><div class="fill" style="width:33%"></div></div></div>
-            <div class="budget-row"><div class="budget-label"><span>Magpie measured incremental delta</span><strong>0.93 GB</strong></div><div class="bar"><div class="fill asr" style="width:3.9%"></div></div></div>
-            <div class="budget-row"><div class="budget-label"><span>Observed desktop baseline</span><strong>3.14 GB</strong></div><div class="bar"><div class="fill tts" style="width:13.1%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Qwen3.5 32K + Parakeet worker delta</span><strong>8.85 GB</strong></div><div class="bar"><div class="fill" style="width:36.9%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Magpie measured incremental delta</span><strong>1.05 GB</strong></div><div class="bar"><div class="fill asr" style="width:4.4%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Observed desktop baseline</span><strong>3.08 GB</strong></div><div class="bar"><div class="fill tts" style="width:12.8%"></div></div></div>
             <div class="budget-row"><div class="budget-label"><span>Required reserve</span><strong>≥1.5 GB</strong></div><div class="bar"><div class="fill reserve" style="width:6.25%"></div></div></div>
           </div>
         </article>
@@ -236,7 +241,7 @@
           </ol>
         </article>
       </div>
-      <div class="callout" style="margin-top:18px;"><strong>Artifact size is not peak VRAM.</strong> The decision is made from a combined warmed benchmark while normal desktop applications are open. The current RTX 3090 profile selects Qwen3.5 9B Q5_K_M because Qwen3.6 27B missed the 20 token/s gate. Other hardware is described by another profile rather than a hardcoded 24 GB assumption.</div>
+      <div class="callout" style="margin-top:18px;"><strong>Artifact size is not peak VRAM.</strong> The decision is made from a combined warmed benchmark while normal desktop applications are open. The selected RTX 3090 profile uses Qwen3.5 9B Q5_K_M with one true 32K conversation slot, Parakeet CTC Q8, and Magpie. Other hardware is described by another profile rather than a hardcoded 24 GB assumption.</div>
     </section>
 
     <section id="runtime">
@@ -341,8 +346,23 @@
             </tbody>
           </table>
         </article>
+        <article class="card full">
+          <span class="tag green">Matrix complete</span>
+          <h3>Measured outcome on the RTX 3090 setup</h3>
+          <table>
+            <thead><tr><th>Decision</th><th>Evidence</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>LLM</td><td>Qwen3.5 9B Q5_K_M, one true 32K slot</td><td>7/7 fixed checks, 49.23 tok/s minimum, 58.96 ms TTFT p95</td></tr>
+              <tr><td>STT</td><td>Parakeet CTC 1.1B Q8</td><td>1.69% WER on six prerecorded fixtures, 173.30 ms derived partial upper bound</td></tr>
+              <tr><td>TTS</td><td>Magpie v2602 + NanoCodec</td><td>43.81 ms first PCM p95, incremental PCM retained; Kokoro remains the CPU fallback</td></tr>
+              <tr><td>End to end</td><td>20 prerecorded full turns</td><td>443.04 ms p50, 489.66 ms p95, 13,169 MiB maximum GPU use, zero failures</td></tr>
+              <tr><td>Finalist soak</td><td>Continuous full-clause conversation</td><td>30.173 minutes, 134 turns, zero turn failures, worker failures, or OOMs</td></tr>
+            </tbody>
+          </table>
+          <p class="muted">The TTS archive includes randomized Magpie/Kokoro A/B WAV pairs and a separate answer key. Perceptual preference is intentionally left for a human listener; the automated evidence does not invent a MOS or claim that a larger deferred model sounds better.</p>
+        </article>
       </div>
-      <div class="callout" style="margin-top:18px;"><strong>Ordering constraint.</strong> This matrix starts only after the baseline implementation and release verification are effectively complete. The passing baseline remains the control, and candidate discovery must not destabilize it.</div>
+      <div class="callout" style="margin-top:18px;"><strong>Completed in dependency order.</strong> The passing post-audit baseline remained the control while candidate admission, isolated benchmarks, combined memory checks, end-to-end turns, acoustic scenarios, cancellation probes, and the finalist soak ran in stages.</div>
     </section>
 
     <section id="acceptance">

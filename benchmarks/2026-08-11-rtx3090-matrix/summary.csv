@@ -1,0 +1,35 @@
+scope,profile,workload,samples,metric,value,unit,gate,status,evidence
+llm,qwen3.6-27b-q4-k-m,historical dedicated generation,5,generation_min,17.197,tokens_per_second,20,reject,evidence/qwen36-q4-16k.json
+llm,qwen3.5-9b-q5-k-m-32k-p1,dedicated generation,5,generation_min,49.230,tokens_per_second,20,pass,evidence/qwen35-q5-32k-p1.json
+llm,qwen3.5-9b-q5-k-m-32k-p1,warm fixed prompt,20,ttft_p95,58.957,ms,900,pass,evidence/qwen35-q5-32k-p1.json
+llm,qwen3.5-9b-q5-k-m-32k-p1,fixed quality rubric,7,quality_checks,7,count,7,pass,evidence/qwen35-q5-32k-p1.json
+llm,qwen3.5-9b-q5-k-m-32k-p1,long context recall,1,effective_context_per_slot,32768,tokens,32768,pass,evidence/qwen35-q5-32k-p1.json
+llm,qwen3.5-9b-q8-32k-p1,dedicated generation,5,generation_min,37.885,tokens_per_second,20,pass-dominated,evidence/qwen35-q8-32k-p1.json
+llm,qwen3.5-9b-q8-32k-p1,fixed quality rubric,7,quality_checks,7,count,7,pass-dominated,evidence/qwen35-q8-32k-p1.json
+llm,qwen3-14b-q5-k-m-32k-p1,dedicated generation,5,generation_min,29.559,tokens_per_second,20,pass-dominated,evidence/qwen3-14b-q5-32k-p1.json
+llm,qwen3-14b-q5-k-m-32k-p1,fixed quality rubric,7,quality_checks,6,count,7,fail-dominated,evidence/qwen3-14b-q5-32k-p1.json
+stt,nemotron-3.5-asr-streaming-0.6b-q8,jfk streaming benchmark,20,realtime_factor,35.0679,x,,control,evidence/nemotron35-asr-performance.json
+stt,nemotron-3.5-asr-streaming-0.6b-q8,six prerecorded acoustic fixtures,59,word_error_rate,6.78,percent,,control,evidence/nemotron35-asr-corpus.json
+stt,nemotron-speech-streaming-en-0.6b-q8,jfk streaming benchmark,20,realtime_factor,31.9565,x,,pass-dominated,evidence/nemotron-speech-en-asr-performance.json
+stt,nemotron-speech-streaming-en-0.6b-q8,six prerecorded acoustic fixtures,59,word_error_rate,6.78,percent,,pass-dominated,evidence/nemotron-speech-en-asr-corpus.json
+stt,parakeet-ctc-1.1b-q8,jfk streaming benchmark,20,realtime_factor,12.0300,x,,selected,evidence/parakeet-asr-performance.json
+stt,parakeet-ctc-1.1b-q8,jfk streaming benchmark,20,partial_update_upper_bound,173.3001,ms,250,pass,evidence/parakeet-asr-performance.json
+stt,parakeet-ctc-1.1b-q8,six prerecorded acoustic fixtures,59,word_error_rate,1.69,percent,,selected,evidence/parakeet-asr-corpus.json
+tts,magpie-v2602-f16-nanocodec-f16,streaming synthesis,3,first_pcm_p95,43.810,ms,,selected,evidence/magpie-streaming.json
+tts,magpie-v2602-f16-nanocodec-f16,streaming synthesis,3,realtime_factor_median,0.1900,x,,selected,evidence/magpie-streaming.json
+tts,magpie-v2602-f16-nanocodec-f16,incremental transport,1,pcm_reads,158,count,2,pass,evidence/magpie-incremental-transport.json
+tts,kokoro-82m-int8-cpu,phrase synthesis,1,first_pcm,5106.072,ms,,fallback,evidence/kokoro-cpu.json
+memory,qwen35-q5-32k-parakeet-magpie,combined warm workers,1,worker_delta,9908,MiB,,pass,evidence/qwen35-q5-32k-parakeet-magpie-vram.json
+memory,qwen35-q5-32k-parakeet-magpie,combined warm workers,1,warmed_total,12991,MiB,23040,pass,evidence/qwen35-q5-32k-parakeet-magpie-vram.json
+conversation,qwen35-q5-32k-parakeet-magpie,prerecorded full-clause turns,20,end_speech_to_first_audio_p50,443.041,ms,1200,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,prerecorded full-clause turns,20,end_speech_to_first_audio_p95,489.664,ms,1800,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,prerecorded full-clause turns,20,warm_llm_ttft_p95,79.131,ms,900,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,prerecorded full-clause turns,20,asr_partial_event_max,42.073,ms,250,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,post-aec interruption,20,onset_to_silence_p95,26.120,ms,150,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,prerecorded full-clause turns,20,gpu_total_max,13169,MiB,23040,pass,evidence/selected-conversation-20-turn.json
+conversation,qwen35-q5-32k-parakeet-magpie,six acoustic integration scenarios,6,transcript_checks,6,count,6,pass,evidence/selected-acoustic-scenarios.json
+soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,1,duration,30.173,minutes,30,pass,evidence/selected-conversation-30-minute-soak.json
+soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,completed_turns,134,count,1,pass,evidence/selected-conversation-30-minute-soak.json
+soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,turn_failure_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json
+soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,worker_failure_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json
+soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,oom_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json

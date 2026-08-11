@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "defaultProfile": "rtx3090-qwen35-q5-magpie",
+  "defaultProfile": "rtx3090-qwen35-q5-parakeet-32k",
   "profiles": [
     {
       "id": "rtx3090-qwen35-q5-magpie",

@@ -1,11 +1,14 @@
 [CmdletBinding()]
 param(
-    [string]$Output = "artifacts/release/offline-runtime.json"
+    [string]$Output = "artifacts/release/offline-runtime.json",
+    [string]$Profile,
+    [ValidateSet("release", "debug")]
+    [string]$BuildProfile = "release"
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = Split-Path -Parent $PSScriptRoot
-$gate = Join-Path $workspace "target\debug\release-gate.exe"
+$gate = Join-Path $workspace "target\$BuildProfile\release-gate.exe"
 if (-not (Test-Path -LiteralPath $gate -PathType Leaf)) {
     throw "Build release-gate before running the offline test"
 }
@@ -23,7 +26,9 @@ try {
 }
 
 $outputPath = Join-Path $workspace $Output
-& $gate --turns 1 --skip-audio --output $outputPath
+$arguments = @("--turns", "1", "--skip-audio", "--output", $outputPath)
+if ($Profile) { $arguments += @("--profile", $Profile) }
+& $gate @arguments
 if ($LASTEXITCODE -ne 0) { throw "Offline conversation run failed ($LASTEXITCODE)" }
 
 $evidence = Get-Content -Raw -LiteralPath $outputPath | ConvertFrom-Json
