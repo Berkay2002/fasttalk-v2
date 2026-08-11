@@ -33,6 +33,8 @@ $sources = [ordered]@{
     "selected-conversation-20-turn.json" = "artifacts/matrix/qwen35-q5-parakeet-32k-conversation-20-turn.json"
     "selected-acoustic-scenarios.json" = "artifacts/matrix/parakeet-acoustic-scenarios/summary.json"
     "selected-conversation-30-minute-soak.json" = "artifacts/matrix/qwen35-q5-parakeet-32k-conversation-30-minute-soak.json"
+    "installer-sanitized-final.json" = "artifacts/release/installer-sanitized-final.json"
+    "unsigned-release-manifest.json" = "artifacts/release/release-manifest.json"
 }
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null

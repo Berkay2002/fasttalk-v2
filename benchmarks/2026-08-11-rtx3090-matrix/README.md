@@ -93,6 +93,17 @@ immediately, then drains the already-started bounded native clause so the
 speech worker does not crash. It does not claim cancellation of native compute
 inside that clause.
 
+## Packaging result
+
+The selected default was rebuilt as an unsigned current-user NSIS installer.
+The locked release-mode workspace suite, frontend production build, and Tauri
+bundle completed. A sanitized install test then installed the package, verified
+every runtime payload hash, opened the FastTalk window, and removed the app and
+uninstall entry cleanly. Authenticode remains unverified because no code-signing
+certificate is configured. A true disconnected-host run and an independent
+clean Windows VM remain external release checks; the repository does not label
+the sanitized same-host test as either one.
+
 ## Reproduction and provenance
 
 Machine-readable headline values are in [`summary.csv`](summary.csv). Raw JSON,

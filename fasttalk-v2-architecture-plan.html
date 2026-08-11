@@ -357,6 +357,7 @@
               <tr><td>TTS</td><td>Magpie v2602 + NanoCodec</td><td>43.81 ms first PCM p95, incremental PCM retained; Kokoro remains the CPU fallback</td></tr>
               <tr><td>End to end</td><td>20 prerecorded full turns</td><td>443.04 ms p50, 489.66 ms p95, 13,169 MiB maximum GPU use, zero failures</td></tr>
               <tr><td>Finalist soak</td><td>Continuous full-clause conversation</td><td>30.173 minutes, 134 turns, zero turn failures, worker failures, or OOMs</td></tr>
+              <tr><td>Packaging</td><td>Unsigned current-user NSIS installer in a sanitized environment</td><td>26 runtime files verified; install, window launch, and uninstall passed</td></tr>
             </tbody>
           </table>
           <p class="muted">The TTS archive includes randomized Magpie/Kokoro A/B WAV pairs and a separate answer key. Perceptual preference is intentionally left for a human listener; the automated evidence does not invent a MOS or claim that a larger deferred model sounds better.</p>

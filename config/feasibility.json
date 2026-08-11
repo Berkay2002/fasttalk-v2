@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "sourceArtifact": {
     "path": "fasttalk-v2-architecture-plan.html",
-    "sha256": "fcb2d2d5a34d8beb9ccc87b3a88ff6345ca79aba19b1ce72006738dd92f809f2"
+    "sha256": "6b9cd13cf43fe87279a8d938205ca4b6ca43adefbd1509029630c4b3bf0ba5f9"
   },
   "target": {
     "minimumWindowsBuild": 22000,

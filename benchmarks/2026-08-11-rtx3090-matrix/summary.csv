@@ -33,3 +33,5 @@ soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,compl
 soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,turn_failure_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json
 soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,worker_failure_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json
 soak,qwen35-q5-32k-parakeet-magpie,continuous full-clause conversation,134,oom_count,0,count,0,pass,evidence/selected-conversation-30-minute-soak.json
+packaging,qwen35-q5-32k-parakeet-magpie,sanitized current-user installer,1,runtime_files_verified,26,count,26,pass,evidence/installer-sanitized-final.json
+packaging,qwen35-q5-32k-parakeet-magpie,sanitized current-user installer,1,install_launch_uninstall,1,boolean,1,pass,evidence/installer-sanitized-final.json
