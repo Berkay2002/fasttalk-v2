@@ -4,7 +4,7 @@
   "profiles": [
     {
       "id": "rtx3090-hauhau-q6-parakeet-32k",
-      "displayName": "RTX 3090 Hauhau Q6 32K profile",
+      "displayName": "HauhauCS Qwen3.5 9B Q6_K",
       "minimumGpuMemoryMiB": 24576,
       "reserveGpuMemoryMiB": 1536,
       "measuredWorkerMemoryMiB": {
@@ -15,6 +15,55 @@
         "groupId": "qwen",
         "artifact": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
         "legacyPath": ".cache/models/hauhau-qwen3.5-9b/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+        "contextSize": 32768,
+        "parallel": 1
+      },
+      "asr": {
+        "groupId": "parakeet-ctc",
+        "artifact": "parakeet-ctc-1.1b.q8_0.gguf",
+        "legacyPath": ".cache/models/parakeet-ctc/parakeet-ctc-1.1b.q8_0.gguf"
+      },
+      "tts": {
+        "groupId": "magpie-tts",
+        "artifact": "magpie_tts_multilingual_357m.v2602.f16.gguf",
+        "legacyPath": ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
+        "tokenizerArtifact": "extracted",
+        "tokenizerLegacyPath": ".cache/models/magpie-tts/extracted"
+      },
+      "codec": {
+        "groupId": "nanocodec",
+        "artifact": "nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+        "legacyPath": ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"
+      },
+      "fallbackTts": {
+        "groupId": "kokoro",
+        "artifact": "",
+        "legacyPath": ".cache/models/kokoro-sherpa-v1.0"
+      },
+      "vad": {
+        "groupId": "silero-vad",
+        "artifact": "silero_vad_16k_op15.onnx",
+        "legacyPath": ".cache/models/silero-vad/silero_vad_16k_op15.onnx"
+      },
+      "turnDetector": {
+        "groupId": "smart-turn",
+        "artifact": "smart-turn-v3.2-cpu.onnx",
+        "legacyPath": ".cache/models/smart-turn/smart-turn-v3.2-cpu.onnx"
+      }
+    },
+    {
+      "id": "rtx3090-qwythos-q6-parakeet-32k",
+      "displayName": "Qwythos 9B Claude Mythos Q6_K",
+      "minimumGpuMemoryMiB": 24576,
+      "reserveGpuMemoryMiB": 1536,
+      "measuredWorkerMemoryMiB": {
+        "withPreferredTts": 10342,
+        "withFallbackTts": 9481
+      },
+      "llm": {
+        "groupId": "qwythos",
+        "artifact": "Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
+        "legacyPath": ".cache/models/qwythos-9b/Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
         "contextSize": 32768,
         "parallel": 1
       },

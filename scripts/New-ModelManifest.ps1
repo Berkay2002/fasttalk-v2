@@ -60,6 +60,7 @@ function Get-TreeArtifacts([string]$Root) {
 }
 
 $qwen = Get-Model "hauhau-qwen3.5-9b-q6-k"
+$qwythos = Get-Model "qwythos-qwen3.5-9b-q6-k"
 $parakeet = Get-Model "parakeet-ctc-1.1b-q8"
 $magpie = Get-Model "magpie-tts-v2602-f16"
 $magpieTokenizer = Get-Model "magpie-tts-tokenizer"
@@ -69,7 +70,7 @@ $smartTurn = Get-Model "smart-turn-v3.2-cpu"
 
 $manifest = [ordered]@{
     schemaVersion = 1
-    release = "2026.08.11.4"
+    release = "2026.08.11.5"
     publicKeyId = "fasttalk-models-2026-01"
     models = @(
         [ordered]@{
@@ -79,6 +80,20 @@ $manifest = [ordered]@{
             revision = $qwen.revision
             legacyRoot = ".cache/models/hauhau-qwen3.5-9b"
             artifacts = @(Get-Artifact ".cache/models/hauhau-qwen3.5-9b" $qwen)
+            license = [ordered]@{
+                id = "apache-2.0"
+                name = "Apache License 2.0"
+                url = "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
+            }
+            postInstall = @()
+        },
+        [ordered]@{
+            id = "qwythos"
+            displayName = "Qwythos 9B Claude Mythos Q6_K"
+            repository = $qwythos.repository
+            revision = $qwythos.revision
+            legacyRoot = ".cache/models/qwythos-9b"
+            artifacts = @(Get-Artifact ".cache/models/qwythos-9b" $qwythos)
             license = [ordered]@{
                 id = "apache-2.0"
                 name = "Apache License 2.0"

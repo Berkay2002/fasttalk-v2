@@ -24,6 +24,13 @@ struct RuntimeProfiles {
     profiles: Vec<RuntimeProfile>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProfileOption {
+    pub id: String,
+    pub display_name: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeProfile {
@@ -148,14 +155,7 @@ impl NativeRuntime {
     }
 
     fn with_profile(root: PathBuf, profile: RuntimeProfile) -> Self {
-        let models = NativeModelPaths {
-            qwen: root.join(&profile.llm.model.legacy_path),
-            asr: root.join(&profile.asr.legacy_path),
-            magpie: root.join(&profile.tts.model.legacy_path),
-            nanocodec: root.join(&profile.codec.legacy_path),
-            magpie_tokenizer: root.join(&profile.tts.tokenizer_legacy_path),
-            kokoro: root.join(&profile.fallback_tts.legacy_path),
-        };
+        let models = default_model_paths(&root, &profile);
         let vram_admission = fallback_admission(&profile, "GPU memory has not been measured yet");
         Self {
             root,
@@ -166,6 +166,19 @@ impl NativeRuntime {
             kokoro: None,
             vram_admission,
         }
+    }
+
+    pub fn select_profile(&mut self, profile_id: &str) -> Result<(), SupervisorError> {
+        if self.llm.is_some() || self.speech.is_some() || self.kokoro.is_some() {
+            return Err(SupervisorError::InvalidSpec(
+                "cannot change runtime profile while native workers are running".to_owned(),
+            ));
+        }
+        let profile = named_runtime_profile(profile_id)?;
+        self.models = default_model_paths(&self.root, &profile);
+        self.vram_admission = fallback_admission(&profile, "GPU memory has not been measured yet");
+        self.profile = profile;
+        Ok(())
     }
 
     #[must_use]
@@ -403,6 +416,28 @@ impl NativeRuntime {
     }
 }
 
+fn default_model_paths(root: &Path, profile: &RuntimeProfile) -> NativeModelPaths {
+    NativeModelPaths {
+        qwen: root.join(&profile.llm.model.legacy_path),
+        asr: root.join(&profile.asr.legacy_path),
+        magpie: root.join(&profile.tts.model.legacy_path),
+        nanocodec: root.join(&profile.codec.legacy_path),
+        magpie_tokenizer: root.join(&profile.tts.tokenizer_legacy_path),
+        kokoro: root.join(&profile.fallback_tts.legacy_path),
+    }
+}
+
+pub fn available_runtime_profiles() -> Vec<RuntimeProfileOption> {
+    runtime_profiles()
+        .profiles
+        .into_iter()
+        .map(|profile| RuntimeProfileOption {
+            id: profile.id,
+            display_name: profile.display_name,
+        })
+        .collect()
+}
+
 fn default_runtime_profile() -> RuntimeProfile {
     let profiles = runtime_profiles();
     let default_profile = profiles.default_profile.clone();
@@ -595,6 +630,30 @@ mod tests {
         assert_eq!(profile.asr.group_id, "parakeet-ctc");
         assert_eq!(default_runtime_profile().id, profile.id);
         assert!(named_runtime_profile("missing-profile").is_err());
+    }
+
+    #[test]
+    fn qwythos_profile_is_selectable_without_changing_the_default() {
+        let profile = named_runtime_profile("rtx3090-qwythos-q6-parakeet-32k").unwrap();
+        assert_eq!(profile.llm.model.group_id, "qwythos");
+        assert_eq!(profile.llm.context_size, 32_768);
+        assert_eq!(
+            profile.llm.model.artifact,
+            "Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf"
+        );
+        assert_eq!(
+            profile.measured_worker_memory_mi_b.with_preferred_tts,
+            10_342
+        );
+        assert_eq!(profile.measured_worker_memory_mi_b.with_fallback_tts, 9_481);
+        assert_eq!(
+            default_runtime_profile().id,
+            "rtx3090-hauhau-q6-parakeet-32k"
+        );
+
+        let mut runtime = NativeRuntime::for_development_checkout();
+        runtime.select_profile(&profile.id).unwrap();
+        assert_eq!(runtime.profile().id, profile.id);
     }
 
     #[test]

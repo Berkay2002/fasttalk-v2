@@ -117,6 +117,11 @@ export type ModelProgress = {
   totalBytes: number;
 };
 
+export type RuntimeProfileOption = {
+  id: string;
+  displayName: string;
+};
+
 export type AudioStartRequest = {
   inputDeviceId: string | null;
   outputDeviceId: string | null;

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "2026.08.11.4",
+  "release": "2026.08.11.5",
   "publicKeyId": "fasttalk-models-2026-01",
   "models": [
     {
@@ -15,6 +15,27 @@
           "path": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
           "sizeBytes": 7359259008,
           "sha256": "c0ba7beb68fd3fe47891bd549486d38dcf62d00817296ea314ad37017f5a4986"
+        }
+      ],
+      "license": {
+        "id": "apache-2.0",
+        "name": "Apache License 2.0",
+        "url": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
+      },
+      "postInstall": []
+    },
+    {
+      "id": "qwythos",
+      "displayName": "Qwythos 9B Claude Mythos Q6_K",
+      "repository": "empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF",
+      "revision": "5cebd89dd078b033c26988248740ddadf40f2fbd",
+      "legacyRoot": ".cache/models/qwythos-9b",
+      "artifacts": [
+        {
+          "remotePath": "Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
+          "path": "Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
+          "sizeBytes": 7359259296,
+          "sha256": "2bef47eee2e83fa5e2ac5619102d8418144147be1270870aba42b22a606831e6"
         }
       ],
       "license": {

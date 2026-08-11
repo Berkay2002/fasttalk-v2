@@ -9,6 +9,25 @@ const PACK_ROOT: &str = "fasttalk-model-pack";
 
 impl ModelManager {
     pub fn export_pack(&self, output: &Path) -> Result<(), ModelManagerError> {
+        let ids = self
+            .manifest()
+            .manifest()
+            .models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect::<Vec<_>>();
+        self.export_pack_groups(&ids, output)
+    }
+
+    pub fn export_pack_groups(
+        &self,
+        ids: &[String],
+        output: &Path,
+    ) -> Result<(), ModelManagerError> {
+        let models = ids
+            .iter()
+            .map(|id| self.model(id).cloned())
+            .collect::<Result<Vec<_>, _>>()?;
         let _lock = self.lock_store()?;
         let file = File::create(output).map_err(|source| pack_io(output, source))?;
         let mut archive = tar::Builder::new(file);
@@ -22,7 +41,7 @@ impl ModelManager {
             &format!("{PACK_ROOT}/manifest.sig"),
             self.manifest().signature().as_bytes(),
         )?;
-        for model in &self.manifest().manifest().models {
+        for model in &models {
             let source = self.resolved_root(&model.id)?.ok_or_else(|| {
                 ModelManagerError::UnknownModel(format!("{} is not installed", model.id))
             })?;
@@ -75,6 +94,9 @@ impl ModelManager {
         }
         for model in &self.manifest().manifest().models {
             let source = root.join("models").join(&model.id);
+            if !source.is_dir() {
+                continue;
+            }
             for artifact in &model.artifacts {
                 verify_artifact(artifact, &source.join(&artifact.path))?;
             }

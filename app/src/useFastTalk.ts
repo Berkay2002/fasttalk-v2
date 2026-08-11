@@ -11,6 +11,7 @@ import {
   type ModelProgress,
   type ModelStatus,
   type NativeRuntimeStatus,
+  type RuntimeProfileOption,
   type WorkerStatus,
 } from "./contracts";
 
@@ -49,6 +50,7 @@ export function useFastTalk() {
   const [audio, setAudio] = useState<AudioStatus | null>(null);
   const [devices, setDevices] = useState<AudioDevices>({ inputs: [], outputs: [] });
   const [models, setModels] = useState<ModelStatus[]>([]);
+  const [runtimeProfiles, setRuntimeProfiles] = useState<RuntimeProfileOption[]>([]);
   const [modelProgress, setModelProgress] = useState<ModelProgress | null>(null);
   const [inputDeviceId, setInputDeviceId] = useState<string | null>(null);
   const [outputDeviceId, setOutputDeviceId] = useState<string | null>(null);
@@ -120,7 +122,8 @@ export function useFastTalk() {
       fastTalkApi.runtimeStatus(),
       fastTalkApi.audioStatus(),
       fastTalkApi.audioDevices(),
-    ]).then(([engineResult, runtimeResult, audioResult, devicesResult]) => {
+      fastTalkApi.runtimeProfiles(),
+    ]).then(([engineResult, runtimeResult, audioResult, devicesResult, profilesResult]) => {
       if (disposed) return;
       if (engineResult.status === "fulfilled") setSnapshot(engineResult.value);
       if (runtimeResult.status === "fulfilled") setRuntime(runtimeResult.value);
@@ -130,7 +133,8 @@ export function useFastTalk() {
         setInputDeviceId(preferredDevice(devicesResult.value.inputs));
         setOutputDeviceId(preferredDevice(devicesResult.value.outputs));
       }
-      const failure = [engineResult, runtimeResult, audioResult, devicesResult].find(
+      if (profilesResult.status === "fulfilled") setRuntimeProfiles(profilesResult.value);
+      const failure = [engineResult, runtimeResult, audioResult, devicesResult, profilesResult].find(
         (result) => result.status === "rejected",
       );
       if (failure?.status === "rejected") setError(errorMessage(failure.reason));
@@ -174,6 +178,21 @@ export function useFastTalk() {
       }
     },
     [],
+  );
+
+  const selectRuntimeProfile = useCallback(
+    (profileId: string) =>
+      runAction("Changing language model", async () => {
+        const nextRuntime = await fastTalkApi.runtimeSelectProfile(profileId);
+        setModelsLoading(true);
+        try {
+          setModels(await fastTalkApi.modelStatus());
+        } finally {
+          setModelsLoading(false);
+        }
+        return nextRuntime;
+      }, setRuntime),
+    [runAction],
   );
 
   const prepare = useCallback(async () => {
@@ -343,11 +362,13 @@ export function useFastTalk() {
     audio,
     devices,
     models,
+    runtimeProfiles,
     modelProgress,
     inputDeviceId,
     outputDeviceId,
     setInputDeviceId,
     setOutputDeviceId,
+    selectRuntimeProfile,
     loading,
     modelsLoading,
     busy,

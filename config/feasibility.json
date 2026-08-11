@@ -81,6 +81,16 @@
       "sha256": "c0ba7beb68fd3fe47891bd549486d38dcf62d00817296ea314ad37017f5a4986"
     },
     {
+      "id": "qwythos-qwen3.5-9b-q6-k",
+      "repository": "empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF",
+      "revision": "5cebd89dd078b033c26988248740ddadf40f2fbd",
+      "environmentVariable": "FASTTALK_QWYTHOS_QWEN_MODEL",
+      "defaultPath": ".cache/models/qwythos-9b/Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
+      "fileName": "Qwythos-9B-Claude-Mythos-5-1M-Q6_K.gguf",
+      "sizeBytes": 7359259296,
+      "sha256": "2bef47eee2e83fa5e2ac5619102d8418144147be1270870aba42b22a606831e6"
+    },
+    {
       "id": "nemotron-3.5-asr-streaming-0.6b-q8",
       "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
       "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",

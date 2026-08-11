@@ -146,6 +146,12 @@ impl ModelManager {
             .collect()
     }
 
+    pub fn statuses_for(&self, ids: &[String]) -> Result<Vec<ModelStatus>, ModelManagerError> {
+        ids.iter()
+            .map(|id| self.model(id).map(|model| self.status_for(model)))
+            .collect()
+    }
+
     pub fn resolved_root(&self, id: &str) -> Result<Option<PathBuf>, ModelManagerError> {
         let model = self.model(id)?;
         let managed = self.managed_root(model);
@@ -164,15 +170,36 @@ impl ModelManager {
         token: Option<&str>,
         progress: &(dyn Fn(InstallProgress) + Send + Sync),
     ) -> Result<Vec<ModelStatus>, ModelManagerError> {
+        let ids = self
+            .manifest
+            .manifest()
+            .models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect::<Vec<_>>();
+        self.install_groups(&ids, token, progress).await?;
+        Ok(self.statuses())
+    }
+
+    pub async fn install_groups(
+        &self,
+        ids: &[String],
+        token: Option<&str>,
+        progress: &(dyn Fn(InstallProgress) + Send + Sync),
+    ) -> Result<Vec<ModelStatus>, ModelManagerError> {
+        let models = ids
+            .iter()
+            .map(|id| self.model(id).cloned())
+            .collect::<Result<Vec<_>, _>>()?;
         let _lock = self.lock_store()?;
-        self.check_disk_space()?;
-        for model in &self.manifest.manifest().models {
+        self.check_disk_space_for(&models)?;
+        for model in &models {
             if self.resolved_root(&model.id)?.is_some() {
                 continue;
             }
             self.install_group(model, token, progress).await?;
         }
-        Ok(self.statuses())
+        self.statuses_for(ids)
     }
 
     pub(crate) fn model(&self, id: &str) -> Result<&ModelGroup, ModelManagerError> {
@@ -269,12 +296,9 @@ impl ModelManager {
             .join(&model.id)
     }
 
-    fn check_disk_space(&self) -> Result<(), ModelManagerError> {
+    fn check_disk_space_for(&self, models: &[ModelGroup]) -> Result<(), ModelManagerError> {
         create_dir_all(&self.store_root)?;
-        let required: u64 = self
-            .manifest
-            .manifest()
-            .models
+        let required: u64 = models
             .iter()
             .filter(|model| self.resolved_root(&model.id).ok().flatten().is_none())
             .flat_map(|model| &model.artifacts)
@@ -708,29 +732,36 @@ mod tests {
     use tempfile::TempDir;
 
     fn manager_with_artifact(temp: &TempDir, content: &[u8]) -> ModelManager {
+        manager_with_artifacts(temp, &[("fixture", content)])
+    }
+
+    fn manager_with_artifacts(temp: &TempDir, contents: &[(&str, &[u8])]) -> ModelManager {
         let manifest = ModelManifest {
             schema_version: 1,
             release: "test".to_owned(),
             public_key_id: "test".to_owned(),
-            models: vec![ModelGroup {
-                id: "fixture".to_owned(),
-                display_name: "Fixture".to_owned(),
-                repository: "owner/repo".to_owned(),
-                revision: "0123456789012345678901234567890123456789".to_owned(),
-                legacy_root: "legacy/fixture".to_owned(),
-                artifacts: vec![Artifact {
-                    remote_path: "model.bin".to_owned(),
-                    path: "model.bin".to_owned(),
-                    size_bytes: content.len() as u64,
-                    sha256: hex::encode(Sha256::digest(content)),
-                }],
-                license: LicenseNotice {
-                    id: "test".to_owned(),
-                    name: "Test".to_owned(),
-                    url: "https://example.invalid".to_owned(),
-                },
-                post_install: Vec::new(),
-            }],
+            models: contents
+                .iter()
+                .map(|(id, content)| ModelGroup {
+                    id: (*id).to_owned(),
+                    display_name: (*id).to_owned(),
+                    repository: "owner/repo".to_owned(),
+                    revision: "0123456789012345678901234567890123456789".to_owned(),
+                    legacy_root: format!("legacy/{id}"),
+                    artifacts: vec![Artifact {
+                        remote_path: "model.bin".to_owned(),
+                        path: "model.bin".to_owned(),
+                        size_bytes: content.len() as u64,
+                        sha256: hex::encode(Sha256::digest(content)),
+                    }],
+                    license: LicenseNotice {
+                        id: "test".to_owned(),
+                        name: "Test".to_owned(),
+                        url: "https://example.invalid".to_owned(),
+                    },
+                    post_install: Vec::new(),
+                })
+                .collect(),
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
         let key = SigningKey::from_bytes(&[3; 32]);
@@ -774,6 +805,22 @@ mod tests {
         let status = manager.statuses().remove(0);
         assert_eq!(status.state, ModelState::Partial);
         assert_eq!(status.verified_bytes, 3);
+    }
+
+    #[test]
+    fn reports_only_requested_model_groups_in_requested_order() {
+        let temp = TempDir::new().unwrap();
+        let manager = manager_with_artifacts(&temp, &[("first", b"one"), ("second", b"two")]);
+        let ids = vec!["second".to_owned(), "first".to_owned()];
+        let statuses = manager.statuses_for(&ids).unwrap();
+        assert_eq!(
+            statuses
+                .iter()
+                .map(|status| status.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["second", "first"]
+        );
+        assert!(manager.statuses_for(&["missing".to_owned()]).is_err());
     }
 
     #[tokio::test]
@@ -841,5 +888,38 @@ mod tests {
             .join("model.bin");
         std::fs::write(installed, b"bad").unwrap();
         assert_eq!(imported.statuses()[0].state, ModelState::Corrupt);
+    }
+
+    #[test]
+    fn exports_and_imports_a_profile_scoped_offline_pack() {
+        let source = TempDir::new().unwrap();
+        let manager = manager_with_artifacts(
+            &source,
+            &[("selected", b"selected"), ("optional", b"optional")],
+        );
+        for (id, content) in [
+            ("selected", b"selected".as_slice()),
+            ("optional", b"optional".as_slice()),
+        ] {
+            let path = source.path().join(format!("legacy/{id}/model.bin"));
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        }
+        let pack = source.path().join("selected-models.tar");
+        manager
+            .export_pack_groups(&["selected".to_owned()], &pack)
+            .unwrap();
+
+        let destination = TempDir::new().unwrap();
+        let imported = ModelManager::new(
+            destination.path(),
+            destination.path().join("store"),
+            manager.manifest.clone(),
+        )
+        .unwrap();
+        imported.import_pack(&pack).unwrap();
+        let statuses = imported.statuses();
+        assert_eq!(statuses[0].state, ModelState::Ready);
+        assert_eq!(statuses[1].state, ModelState::Missing);
     }
 }

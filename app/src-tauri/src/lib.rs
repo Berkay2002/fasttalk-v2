@@ -8,7 +8,10 @@ use fasttalk_conversation::{
 };
 use fasttalk_model_manager::{InstallProgress, ModelManager, ModelStatus, SignedManifest};
 use fasttalk_runtime::WorkerState;
-use native::{ModelBinding, NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile};
+use native::{
+    ModelBinding, NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile,
+    RuntimeProfileOption, available_runtime_profiles,
+};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -324,6 +327,33 @@ async fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus
     .map_err(runtime_task_error)?
 }
 
+#[tauri::command]
+fn runtime_profiles() -> Vec<RuntimeProfileOption> {
+    available_runtime_profiles()
+}
+
+#[tauri::command]
+fn runtime_select_profile(
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<NativeRuntimeStatus, CommandError> {
+    if lock(&state.conversation, "conversationUnavailable")?.is_some() {
+        return Err(CommandError {
+            code: "conversationActive",
+            message: "stop the conversation before changing the language model".to_owned(),
+        });
+    }
+    if lock(&state.audio, "audioUnavailable")?.is_some() {
+        return Err(CommandError {
+            code: "audioActive",
+            message: "stop local services before changing the language model".to_owned(),
+        });
+    }
+    let mut runtime = lock(&state.runtime, "runtimeUnavailable")?;
+    runtime.select_profile(&profile_id).map_err(runtime_error)?;
+    runtime.poll().map_err(runtime_error)
+}
+
 fn native_model_paths(
     models: &ModelManager,
     profile: &RuntimeProfile,
@@ -401,12 +431,14 @@ async fn runtime_stop(state: State<'_, AppState>) -> Result<NativeRuntimeStatus,
 #[tauri::command]
 async fn model_status(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, CommandError> {
     let models = state.models.clone();
-    tokio::task::spawn_blocking(move || models.statuses())
+    let ids = selected_model_ids(&state)?;
+    tokio::task::spawn_blocking(move || models.statuses_for(&ids))
         .await
         .map_err(|error| CommandError {
             code: "modelTaskFailed",
             message: error.to_string(),
-        })
+        })?
+        .map_err(model_error)
 }
 
 #[tauri::command]
@@ -415,10 +447,11 @@ async fn model_install_all(
     state: State<'_, AppState>,
 ) -> Result<Vec<ModelStatus>, CommandError> {
     let models = state.models.clone();
+    let ids = selected_model_ids(&state)?;
     let token = std::env::var("HF_TOKEN").ok();
     let progress_app = app.clone();
     models
-        .install_all(token.as_deref(), &move |progress: InstallProgress| {
+        .install_groups(&ids, token.as_deref(), &move |progress: InstallProgress| {
             let _ = progress_app.emit("model-progress", progress);
         })
         .await
@@ -431,25 +464,56 @@ async fn model_import_pack(
     state: State<'_, AppState>,
 ) -> Result<Vec<ModelStatus>, CommandError> {
     let models = state.models.clone();
+    let ids = selected_model_ids(&state)?;
     tokio::task::spawn_blocking(move || models.import_pack(std::path::Path::new(&path)))
         .await
         .map_err(|error| CommandError {
             code: "modelTaskFailed",
             message: error.to_string(),
         })?
-        .map_err(model_error)
+        .map_err(model_error)?;
+    state.models.statuses_for(&ids).map_err(model_error)
 }
 
 #[tauri::command]
 async fn model_export_pack(path: String, state: State<'_, AppState>) -> Result<(), CommandError> {
     let models = state.models.clone();
-    tokio::task::spawn_blocking(move || models.export_pack(std::path::Path::new(&path)))
-        .await
-        .map_err(|error| CommandError {
-            code: "modelTaskFailed",
-            message: error.to_string(),
-        })?
-        .map_err(model_error)
+    let ids = selected_model_ids(&state)?;
+    tokio::task::spawn_blocking(move || {
+        models.export_pack_groups(&ids, std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|error| CommandError {
+        code: "modelTaskFailed",
+        message: error.to_string(),
+    })?
+    .map_err(model_error)
+}
+
+fn selected_model_ids(state: &State<'_, AppState>) -> Result<Vec<String>, CommandError> {
+    let profile = lock(&state.runtime, "runtimeUnavailable")?
+        .profile()
+        .clone();
+    Ok(profile_model_ids(&profile))
+}
+
+fn profile_model_ids(profile: &RuntimeProfile) -> Vec<String> {
+    let candidates = [
+        &profile.llm.model.group_id,
+        &profile.asr.group_id,
+        &profile.tts.model.group_id,
+        &profile.codec.group_id,
+        &profile.fallback_tts.group_id,
+        &profile.vad.group_id,
+        &profile.turn_detector.group_id,
+    ];
+    let mut ids = Vec::new();
+    for id in candidates {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    ids
 }
 
 fn model_error(error: fasttalk_model_manager::ModelManagerError) -> CommandError {
@@ -536,6 +600,8 @@ pub fn run() {
             conversation_interrupt,
             conversation_stop,
             runtime_start,
+            runtime_profiles,
+            runtime_select_profile,
             runtime_cancel_start,
             runtime_status,
             runtime_stop,

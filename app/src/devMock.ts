@@ -7,6 +7,7 @@ import {
   type EngineSnapshot,
   type ModelStatus,
   type NativeRuntimeStatus,
+  type RuntimeProfileOption,
   type WorkerStatus,
 } from "./contracts";
 
@@ -78,6 +79,23 @@ const models: ModelStatus[] = [
   licenseUrl: "https://huggingface.co/",
   error: null,
 }));
+
+function modelsFor(profileId: string): ModelStatus[] {
+  const selected = structuredClone(models);
+  if (profileId === "rtx3090-qwythos-q6-parakeet-32k") {
+    selected[0] = {
+      ...selected[0],
+      id: "qwythos",
+      displayName: "Qwythos 9B Claude Mythos Q6_K",
+    };
+  }
+  return selected;
+}
+
+const runtimeProfiles: RuntimeProfileOption[] = [
+  { id: "rtx3090-hauhau-q6-parakeet-32k", displayName: "HauhauCS Qwen3.5 9B Q6_K" },
+  { id: "rtx3090-qwythos-q6-parakeet-32k", displayName: "Qwythos 9B Claude Mythos Q6_K" },
+];
 
 export function installDevMock() {
   let snapshot: EngineSnapshot = structuredClone(initialSnapshot);
@@ -172,6 +190,18 @@ export function installDevMock() {
           return null;
         case "runtime_status":
           return structuredClone(runtime);
+        case "runtime_profiles":
+          return structuredClone(runtimeProfiles);
+        case "runtime_select_profile":
+          runtime = {
+            ...runtimeState("stopped"),
+            profileId: String(args?.profileId),
+            vramAdmission: {
+              ...runtimeState("stopped").vramAdmission,
+              profileId: String(args?.profileId),
+            },
+          };
+          return structuredClone(runtime);
         case "runtime_start":
           runtime = runtimeState("starting");
           window.setTimeout(() => {
@@ -186,7 +216,7 @@ export function installDevMock() {
         case "model_status":
         case "model_install_all":
         case "model_import_pack":
-          return structuredClone(models);
+          return modelsFor(runtime.profileId);
         case "model_export_pack":
           return null;
         case "conversation_start":

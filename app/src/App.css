@@ -474,6 +474,14 @@ select:disabled {
   background: var(--surface-raised);
 }
 
+.runtime-profile-field {
+  margin-top: 24px;
+}
+
+.runtime-profile-field + .model-setup {
+  margin-top: 14px;
+}
+
 .model-progress {
   display: grid;
   grid-template-columns: 1fr max-content;

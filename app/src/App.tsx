@@ -5,6 +5,7 @@ import type {
   NativeRuntimeStatus,
   ModelProgress,
   ModelStatus,
+  RuntimeProfileOption,
   WorkerState,
   WorkerStatus,
 } from "./contracts";
@@ -38,11 +39,13 @@ function App() {
     audio,
     devices,
     models,
+    runtimeProfiles,
     modelProgress,
     inputDeviceId,
     outputDeviceId,
     setInputDeviceId,
     setOutputDeviceId,
+    selectRuntimeProfile,
     loading,
     modelsLoading,
     busy,
@@ -156,6 +159,13 @@ function App() {
             />
           </div>
 
+          <RuntimeProfileField
+            profiles={runtimeProfiles}
+            value={runtime.profileId}
+            disabled={audio !== null || conversationActive || busy !== null || startupBusy}
+            onChange={selectRuntimeProfile}
+          />
+
           <ModelSetup
             models={models}
             loading={modelsLoading}
@@ -234,6 +244,33 @@ function App() {
         </aside>
       </div>
     </main>
+  );
+}
+
+function RuntimeProfileField({
+  profiles,
+  value,
+  disabled,
+  onChange,
+}: {
+  profiles: RuntimeProfileOption[];
+  value: string;
+  disabled: boolean;
+  onChange: (profileId: string) => void;
+}) {
+  return (
+    <label className="device-field runtime-profile-field">
+      <span>Language model</span>
+      <select
+        value={value}
+        disabled={disabled || profiles.length === 0}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {profiles.map((profile) => (
+          <option key={profile.id} value={profile.id}>{profile.displayName}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

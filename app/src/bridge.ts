@@ -9,6 +9,7 @@ import type {
   ModelProgress,
   ModelStatus,
   NativeRuntimeStatus,
+  RuntimeProfileOption,
 } from "./contracts";
 
 export const fastTalkApi = {
@@ -23,6 +24,9 @@ export const fastTalkApi = {
     invoke<AudioStatus>("audio_set_muted", { muted }),
   audioStop: () => invoke<void>("audio_stop"),
   runtimeStart: () => invoke<NativeRuntimeStatus>("runtime_start"),
+  runtimeProfiles: () => invoke<RuntimeProfileOption[]>("runtime_profiles"),
+  runtimeSelectProfile: (profileId: string) =>
+    invoke<NativeRuntimeStatus>("runtime_select_profile", { profileId }),
   runtimeCancelStart: () => invoke<void>("runtime_cancel_start"),
   runtimeStatus: () => invoke<NativeRuntimeStatus>("runtime_status"),
   runtimeStop: () => invoke<NativeRuntimeStatus>("runtime_stop"),
