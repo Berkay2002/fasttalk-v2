@@ -99,6 +99,7 @@ struct TurnMeasurement {
     warm_llm_first_token_ms: f64,
     first_clause: String,
     first_audio: Vec<f32>,
+    synthesized_clause_count: usize,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -122,6 +123,7 @@ struct ConversationEvidence {
     tts_backend: PreferredTtsBackend,
     transcripts: Vec<String>,
     first_clauses: Vec<String>,
+    synthesized_clause_counts: Vec<usize>,
     end_of_speech_to_first_audio_ms: Vec<f64>,
     warm_llm_first_token_ms: Vec<f64>,
     asr_partial_update_ms: Vec<f64>,
@@ -182,6 +184,7 @@ async fn run_with_runtime(
         tts_backend: status.tts_backend,
         transcripts: Vec::with_capacity(args.turns),
         first_clauses: Vec::with_capacity(args.turns),
+        synthesized_clause_counts: Vec::with_capacity(args.turns),
         end_of_speech_to_first_audio_ms: Vec::with_capacity(args.turns),
         warm_llm_first_token_ms: Vec::with_capacity(args.turns),
         asr_partial_update_ms: Vec::new(),
@@ -216,6 +219,9 @@ async fn run_with_runtime(
         }
         evidence.transcripts.push(measurement.transcript);
         evidence.first_clauses.push(measurement.first_clause);
+        evidence
+            .synthesized_clause_counts
+            .push(measurement.synthesized_clause_count);
         evidence
             .asr_partial_update_ms
             .extend(measurement.asr_partial_update_ms.into_iter().map(round3));
@@ -289,73 +295,107 @@ async fn measure_turn(
     let llm = LlmClient::new("http://127.0.0.1:18080").map_err(|error| error.to_string())?;
     let (llm_tx, mut llm_rx) = mpsc::channel(128);
     let llm_started = Instant::now();
+    let cancellation = CancellationToken::new();
     let llm_task = tokio::spawn({
         let prompt = format!(
-            "Reply with one short sentence about this transcript: {}",
+            "Reply with exactly two short sentences about this transcript: {}",
             transcription.text
         );
+        let cancellation = cancellation.clone();
         async move {
             llm.stream_reply(
                 vec![ChatMessage {
                     role: "user".to_owned(),
                     content: prompt,
                 }],
-                CancellationToken::new(),
+                cancellation,
                 llm_tx,
             )
             .await
         }
     });
 
-    let mut first_token_ms = None;
-    let first_clause = loop {
-        match llm_rx.recv().await {
-            Some(LlmEvent::Delta(_)) => {
-                first_token_ms.get_or_insert_with(|| llm_started.elapsed().as_secs_f64() * 1_000.0);
-            }
-            Some(LlmEvent::Clause(clause)) => break clause,
-            Some(LlmEvent::Completed(answer)) if !answer.trim().is_empty() => break answer,
-            Some(LlmEvent::Completed(_)) | None => {
-                return Err("LLM completed without speech text".to_owned());
-            }
-        }
-    };
-    let llm_drain = tokio::spawn(async move { while llm_rx.recv().await.is_some() {} });
-
-    let (tts_tx, mut tts_rx) = mpsc::channel(32);
-    let tts_task = spawn_tts(
-        backend,
-        first_clause.clone(),
-        CancellationToken::new(),
-        tts_tx,
-    )?;
-    let mut first_audio = None;
-    let mut first_audio_at = None;
-    while let Some(event) = tts_rx.recv().await {
-        match event {
-            TtsEvent::Pcm48KhzMono(samples) if !samples.is_empty() => {
-                if first_audio.is_none() {
-                    first_audio_at = Some(Instant::now());
-                    first_audio = Some(samples);
+    let (clauses, mut clause_receiver) = mpsc::channel(8);
+    let generation = async {
+        let mut first_token_ms = None;
+        let mut answer = None;
+        while let Some(event) = llm_rx.recv().await {
+            match event {
+                LlmEvent::Delta(_) => {
+                    first_token_ms
+                        .get_or_insert_with(|| llm_started.elapsed().as_secs_f64() * 1_000.0);
+                }
+                LlmEvent::Clause(clause) => clauses
+                    .send(clause)
+                    .await
+                    .map_err(|_| "clause synthesizer stopped early".to_owned())?,
+                LlmEvent::Completed(completed) => {
+                    answer = Some(completed);
+                    break;
                 }
             }
-            TtsEvent::Pcm48KhzMono(_) => {}
-            TtsEvent::Completed => break,
         }
+        drop(clauses);
+        let generated = llm_task
+            .await
+            .map_err(|error| format!("LLM task failed: {error}"))?
+            .map_err(|error| format!("LLM stream failed: {error}"))?;
+        let answer = answer.unwrap_or(generated);
+        if answer.trim().is_empty() {
+            return Err("LLM completed without speech text".to_owned());
+        }
+        Ok::<_, String>((answer, first_token_ms))
+    };
+
+    let speech = async {
+        let mut first_clause = None;
+        let mut first_audio = None;
+        let mut first_audio_at = None;
+        let mut synthesized_clause_count = 0;
+        while let Some(clause) = clause_receiver.recv().await {
+            first_clause.get_or_insert_with(|| clause.clone());
+            let (tts_tx, mut tts_rx) = mpsc::channel(32);
+            let tts_task = spawn_tts(backend, clause, cancellation.clone(), tts_tx)?;
+            let mut clause_samples = 0;
+            while let Some(event) = tts_rx.recv().await {
+                match event {
+                    TtsEvent::Pcm48KhzMono(samples) if !samples.is_empty() => {
+                        clause_samples += samples.len();
+                        if first_audio.is_none() {
+                            first_audio_at = Some(Instant::now());
+                            first_audio = Some(samples);
+                        }
+                    }
+                    TtsEvent::Pcm48KhzMono(_) => {}
+                    TtsEvent::Completed => break,
+                }
+            }
+            tts_task
+                .await
+                .map_err(|error| format!("TTS task failed: {error}"))??;
+            if clause_samples == 0 {
+                return Err("TTS completed a clause without PCM".to_owned());
+            }
+            synthesized_clause_count += 1;
+        }
+        Ok::<_, String>((
+            first_clause.ok_or_else(|| "LLM emitted no clause".to_owned())?,
+            first_audio.ok_or_else(|| "TTS completed without PCM".to_owned())?,
+            first_audio_at.ok_or_else(|| "TTS emitted no timed PCM".to_owned())?,
+            synthesized_clause_count,
+        ))
+    };
+
+    let result = tokio::try_join!(generation, speech);
+    if result.is_err() {
+        cancellation.cancel();
     }
-    let first_audio = first_audio.ok_or_else(|| "TTS completed without PCM".to_owned())?;
-    let first_audio_at = first_audio_at.ok_or_else(|| "TTS emitted no timed PCM".to_owned())?;
-    llm_task
-        .await
-        .map_err(|error| format!("LLM task failed: {error}"))?
-        .map_err(|error| format!("LLM stream failed: {error}"))?;
-    llm_drain
-        .await
-        .map_err(|error| format!("LLM event drain failed: {error}"))?;
-    tts_task
-        .await
-        .map_err(|error| format!("TTS task failed: {error}"))?
-        .map_err(|error| format!("TTS stream failed: {error}"))?;
+    let ((_, first_token_ms), (first_clause, first_audio, first_audio_at, clause_count)) = result?;
+    if clause_count < 2 {
+        return Err(format!(
+            "streaming proof requires at least two synthesized clauses, got {clause_count}"
+        ));
+    }
 
     Ok(TurnMeasurement {
         transcript: transcription.text,
@@ -368,6 +408,7 @@ async fn measure_turn(
             .ok_or_else(|| "LLM emitted no content delta".to_owned())?,
         first_clause,
         first_audio,
+        synthesized_clause_count: clause_count,
     })
 }
 
@@ -548,47 +589,7 @@ async fn run_soak(
 }
 
 async fn run_full_turn(audio: &RecordedAudio, backend: PreferredTtsBackend) -> Result<(), String> {
-    let transcription = transcribe(audio).await?;
-    let client = LlmClient::new("http://127.0.0.1:18080").map_err(|error| error.to_string())?;
-    let (events, mut receiver) = mpsc::channel(128);
-    let task = tokio::spawn(async move {
-        client
-            .stream_reply(
-                vec![ChatMessage {
-                    role: "user".to_owned(),
-                    content: format!("Reply in one short sentence: {}", transcription.text),
-                }],
-                CancellationToken::new(),
-                events,
-            )
-            .await
-            .map_err(|error| error.to_string())
-    });
-    let mut answer = String::new();
-    while let Some(event) = receiver.recv().await {
-        if let LlmEvent::Completed(text) = event {
-            answer = text;
-            break;
-        }
-    }
-    task.await.map_err(|error| error.to_string())??;
-    if answer.trim().is_empty() {
-        return Err("soak LLM response was empty".to_owned());
-    }
-    let (events, mut receiver) = mpsc::channel(32);
-    let task = spawn_tts(backend, answer, CancellationToken::new(), events)?;
-    let mut samples = 0;
-    while let Some(event) = receiver.recv().await {
-        match event {
-            TtsEvent::Pcm48KhzMono(chunk) => samples += chunk.len(),
-            TtsEvent::Completed => break,
-        }
-    }
-    task.await.map_err(|error| error.to_string())??;
-    if samples == 0 {
-        return Err("soak TTS response contained no PCM".to_owned());
-    }
-    Ok(())
+    measure_turn(audio, backend).await.map(|_| ())
 }
 
 fn load_recorded_audio(path: &Path) -> Result<RecordedAudio, String> {
