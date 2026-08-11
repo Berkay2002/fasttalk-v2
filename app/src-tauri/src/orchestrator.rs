@@ -239,7 +239,7 @@ async fn run(
                             apply_event(
                                 &app,
                                 &engine,
-                                ConversationEvent::PartialTranscript { text },
+                                ConversationEvent::PartialTranscriptDelta { text },
                             )?;
                         }
                     }
@@ -338,13 +338,7 @@ fn reset_asr_state(
     *awaiting_commit = false;
     turn_audio.clear();
     if snapshot_state(engine)? == ConversationState::Listening {
-        apply_event(
-            app,
-            engine,
-            ConversationEvent::PartialTranscript {
-                text: String::new(),
-            },
-        )?;
+        apply_event(app, engine, ConversationEvent::ClearPartialTranscript)?;
     }
     Ok(())
 }

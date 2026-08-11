@@ -142,7 +142,7 @@ impl EnergySpeechDetector {
 
 impl Default for EnergySpeechDetector {
     fn default() -> Self {
-        Self::new(0.015, 2, 10)
+        Self::new(0.015, 6, 10)
     }
 }
 
@@ -208,6 +208,24 @@ mod tests {
         assert!(detector.update(&[0.0; ASR_FRAME_SAMPLES]));
         assert!(detector.update(&[0.0; ASR_FRAME_SAMPLES]));
         assert!(!detector.update(&[0.0; ASR_FRAME_SAMPLES]));
+    }
+
+    #[test]
+    fn interruption_detector_ignores_short_noise_bursts() {
+        let mut detector = EnergySpeechDetector::default();
+        for _ in 0..3 {
+            assert!(!detector.update(&[0.02; ASR_FRAME_SAMPLES]));
+        }
+        assert!(!detector.update(&[0.0; ASR_FRAME_SAMPLES]));
+    }
+
+    #[test]
+    fn interruption_detector_accepts_sustained_voice_energy() {
+        let mut detector = EnergySpeechDetector::default();
+        for _ in 0..5 {
+            assert!(!detector.update(&[0.02; ASR_FRAME_SAMPLES]));
+        }
+        assert!(detector.update(&[0.02; ASR_FRAME_SAMPLES]));
     }
 
     #[test]

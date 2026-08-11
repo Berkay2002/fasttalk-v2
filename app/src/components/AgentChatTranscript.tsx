@@ -3,6 +3,7 @@ import type { EngineSnapshot, TranscriptMessage } from "../contracts";
 
 export function AgentChatTranscript({ snapshot }: { snapshot: EngineSnapshot }) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
   const currentUser = snapshot.committedTranscript || snapshot.partialTranscript;
   const hasContent = snapshot.transcript.length > 0
     || currentUser.length > 0
@@ -10,13 +11,17 @@ export function AgentChatTranscript({ snapshot }: { snapshot: EngineSnapshot }) 
 
   useEffect(() => {
     const viewport = viewportRef.current;
-    if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+    if (viewport && pinnedToBottomRef.current) viewport.scrollTop = viewport.scrollHeight;
   }, [snapshot.revision]);
 
   return (
     <div
       ref={viewportRef}
       className="agent-chat"
+      onScroll={(event) => {
+        const viewport = event.currentTarget;
+        pinnedToBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 24;
+      }}
       role="log"
       aria-live="polite"
       aria-relevant="additions text"

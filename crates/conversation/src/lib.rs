@@ -35,7 +35,8 @@ pub struct TranscriptMessage {
 #[serde(tag = "type", content = "payload", rename_all = "camelCase")]
 pub enum ConversationEvent {
     StartListening,
-    PartialTranscript { text: String },
+    PartialTranscriptDelta { text: String },
+    ClearPartialTranscript,
     EndOfSpeech { transcript: String },
     FirstToken,
     AssistantDelta { text: String },
@@ -134,8 +135,11 @@ impl ConversationEngine {
                 self.snapshot.pending_clause = None;
                 self.snapshot.last_error = None;
             }
-            (State::Listening, Event::PartialTranscript { text }) => {
-                self.snapshot.partial_transcript.clone_from(text);
+            (State::Listening, Event::PartialTranscriptDelta { text }) => {
+                self.snapshot.partial_transcript.push_str(text);
+            }
+            (State::Listening, Event::ClearPartialTranscript) => {
+                self.snapshot.partial_transcript.clear();
             }
             (State::Listening, Event::EndOfSpeech { transcript }) => {
                 self.snapshot.state = State::Thinking;
@@ -516,6 +520,25 @@ mod tests {
         assert_eq!(snapshot.state, ConversationState::Thinking);
         assert_eq!(snapshot.assistant_transcript, "Streaming");
         assert!(snapshot.pending_clause.is_none());
+    }
+
+    #[test]
+    fn partial_transcript_deltas_accumulate_in_order() {
+        let mut engine = ConversationEngine::default();
+        engine.apply(ConversationEvent::StartListening).unwrap();
+        engine
+            .apply(ConversationEvent::PartialTranscriptDelta {
+                text: "hello".to_owned(),
+            })
+            .unwrap();
+
+        let snapshot = engine
+            .apply(ConversationEvent::PartialTranscriptDelta {
+                text: " world".to_owned(),
+            })
+            .unwrap();
+
+        assert_eq!(snapshot.partial_transcript, "hello world");
     }
 
     #[test]
