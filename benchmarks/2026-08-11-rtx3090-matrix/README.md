@@ -121,3 +121,14 @@ WAV listening samples, byte counts, and SHA-256 hashes are in
 The Rust toolchain was rechecked during this run: stable 1.97.1 and rustup
 1.29.0 were current. The project-local frontend runtime remains Node 24.19.0
 with npm 11.17.0.
+
+## App screenshots
+
+The `screenshots` directory records the native Tauri release executable on the
+same machine as the benchmark. The app-data profile used for capture was fresh,
+so the setup screen correctly shows that the model pack has not been installed.
+It is UI evidence, not a claim that the workers were ready during capture.
+
+- `fasttalk-setup.png`: full native setup screen.
+- `fasttalk-models.png`: native setup screen with model versions and licenses expanded.
+- `fasttalk-conversation.png`: crop of the native conversation pane.

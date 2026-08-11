@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>FastTalk v2: Implementation Results</title>
+  <style>
+    :root {
+      --bg: #0b100d;
+      --surface: #121914;
+      --surface-2: #172019;
+      --line: #2b382e;
+      --text: #f1f5ef;
+      --muted: #9fa9a1;
+      --accent: #b8e5c2;
+      --accent-strong: #82d79a;
+      --warm: #e5d6af;
+      --danger: #e4aa9e;
+      --radius: 18px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 0%, rgba(130, 215, 154, 0.09), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); }
+    a:hover { color: #d5f4dc; }
+    img { display: block; max-width: 100%; }
+    code, .mono { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
+    .page { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.74rem;
+      font-weight: 750;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    header { padding: 42px 0 22px; }
+    .masthead { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; }
+    .brand img { width: 38px; height: 38px; border-radius: 10px; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); }
+
+    .hero { padding: 64px 0 50px; }
+    .hero-copy { max-width: 880px; }
+    h1 {
+      max-width: 820px;
+      margin: 14px 0 20px;
+      font-size: clamp(2.9rem, 7vw, 6.4rem);
+      line-height: 0.95;
+      letter-spacing: -0.065em;
+      font-weight: 780;
+    }
+    .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: clamp(1rem, 2vw, 1.28rem); }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 25px; color: #cbd3cc; font-size: 0.88rem; }
+    .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+    .hero-meta span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--accent-strong); }
+
+    .hero-frame, .figure {
+      margin-top: 44px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: #080c09;
+      box-shadow: var(--shadow);
+    }
+    .hero-frame img { width: 100%; aspect-ratio: 1900 / 1050; object-fit: cover; }
+    figcaption { padding: 12px 16px; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--line); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 24px 0 84px;
+    }
+    .metric-card { padding: 21px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .metric-card strong { display: block; font-size: clamp(1.55rem, 3vw, 2.4rem); letter-spacing: -0.04em; line-height: 1; }
+    .metric-card span { display: block; margin-top: 10px; color: var(--muted); font-size: 0.82rem; }
+
+    section { padding: 74px 0; border-top: 1px solid var(--line); }
+    .section-head { display: grid; grid-template-columns: 0.72fr 1.28fr; gap: 48px; margin-bottom: 36px; }
+    h2 { margin: 7px 0 0; font-size: clamp(2rem, 4vw, 3.4rem); line-height: 1; letter-spacing: -0.045em; }
+    .section-head p { margin: 7px 0 0; color: var(--muted); font-size: 1rem; max-width: 660px; }
+    h3 { margin: 0 0 12px; font-size: 1.05rem; }
+
+    .architecture {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow-x: auto;
+    }
+    .architecture svg { width: 100%; min-width: 920px; height: auto; }
+    .arch-node { fill: #172019; stroke: #35493a; stroke-width: 1.5; }
+    .arch-label { fill: #f1f5ef; font-size: 16px; font-weight: 700; }
+    .arch-sub { fill: #9fa9a1; font-size: 12px; }
+    .arch-line { stroke: #82d79a; stroke-width: 2.5; fill: none; }
+    .arch-control { stroke: #e5d6af; stroke-width: 2; fill: none; stroke-dasharray: 8 7; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; background: var(--surface); }
+    th, td { padding: 15px 16px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 750; }
+    td { font-size: 0.88rem; }
+    td strong { color: var(--accent); }
+    .decision { font-size: 0.75rem; color: var(--muted); }
+
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .panel { border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; background: var(--surface); }
+    .panel p { color: var(--muted); margin: 0; }
+    .panel .large { color: var(--text); font-size: 2.25rem; font-weight: 760; line-height: 1; letter-spacing: -0.045em; margin-bottom: 12px; }
+    .panel .note { margin-top: 16px; color: #cbd3cc; font-size: 0.84rem; }
+
+    .gates { display: grid; gap: 20px; }
+    .gate-row { display: grid; grid-template-columns: 210px 1fr 150px; align-items: center; gap: 18px; }
+    .gate-label { color: #dbe3dc; font-size: 0.88rem; }
+    .bar { position: relative; height: 10px; border-radius: 999px; background: #243027; overflow: hidden; }
+    .bar > span { position: absolute; inset: 0 auto 0 0; width: var(--value); border-radius: inherit; background: linear-gradient(90deg, var(--accent-strong), var(--accent)); }
+    .gate-value { color: var(--muted); font-size: 0.78rem; text-align: right; }
+
+    .tests { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .test-card { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .test-card .count { color: var(--accent); font-size: 1.8rem; font-weight: 760; letter-spacing: -0.04em; }
+    .test-card p { margin: 8px 0 0; color: var(--muted); font-size: 0.84rem; }
+
+    .gallery { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; align-items: start; }
+    .gallery .figure { margin: 0; }
+    .gallery .conversation img { aspect-ratio: 1070 / 985; object-fit: cover; }
+
+    .limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .limit { padding: 18px 20px; border-left: 3px solid var(--warm); background: rgba(229, 214, 175, 0.055); color: #d8ded9; }
+    .limit strong { display: block; margin-bottom: 4px; }
+    .limit span { color: var(--muted); font-size: 0.86rem; }
+
+    .provenance { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    details { border: 1px solid var(--line); border-radius: 14px; padding: 15px 18px; background: var(--surface); }
+    summary { cursor: pointer; font-weight: 700; }
+    details p { color: var(--muted); font-size: 0.84rem; overflow-wrap: anywhere; }
+    .hash { font-size: 0.74rem; }
+
+    footer { padding: 46px 0 70px; color: var(--muted); font-size: 0.82rem; }
+    footer .page { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+
+    @media (max-width: 900px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .section-head { grid-template-columns: 1fr; gap: 16px; }
+      .split, .gallery, .provenance { grid-template-columns: 1fr; }
+      .tests { grid-template-columns: 1fr 1fr; }
+      .gate-row { grid-template-columns: 1fr; gap: 8px; }
+      .gate-value { text-align: left; }
+    }
+    @media (max-width: 560px) {
+      .page { width: min(100% - 24px, 1180px); }
+      .masthead, footer .page { align-items: flex-start; flex-direction: column; }
+      .hero { padding-top: 42px; }
+      .metrics, .tests, .limits { grid-template-columns: 1fr; }
+      .metric-card { padding: 18px; }
+      section { padding: 56px 0; }
+    }
+    @media print {
+      body { background: white; color: #111; }
+      .page { width: 100%; }
+      .panel, .metric-card, .test-card, table, .architecture, details { color: #111; background: white; break-inside: avoid; }
+      .hero-frame, .figure { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="page masthead">
+      <div class="brand"><img src="__FASTTALK_MARK__" alt="FastTalk waveform mark"><span>FastTalk</span></div>
+      <div class="status">Implemented, verified, packaged</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="page hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Implementation results · 11 August 2026</div>
+        <h1>A local voice pipeline measured end to end.</h1>
+        <p class="lede">FastTalk v2 is a Windows Tauri v2 app that runs speech recognition, language generation, and speech synthesis locally. This summary records what was built, what the selected profile measured, and what still needs external release validation.</p>
+        <div class="hero-meta">
+          <span>RTX 3090 reference profile</span>
+          <span>True 32K single-session context</span>
+          <span>Prerecorded acoustic integration tests</span>
+          <span>Unsigned NSIS package</span>
+        </div>
+      </div>
+
+      <figure class="hero-frame">
+        <img src="__FASTTALK_MODELS__" alt="FastTalk native Tauri window with local model versions and licenses expanded">
+        <figcaption>Native release executable on the benchmark machine. The fresh app-data profile has not installed the model pack, so the setup status is intentionally not ready.</figcaption>
+      </figure>
+    </div>
+
+    <div class="page metrics" aria-label="Headline measurements">
+      <div class="metric-card"><strong>489.7 ms</strong><span>End of speech to first audio, p95</span></div>
+      <div class="metric-card"><strong>49.23 tok/s</strong><span>Minimum LLM generation rate</span></div>
+      <div class="metric-card"><strong>1.69%</strong><span>WER on the six-fixture corpus</span></div>
+      <div class="metric-card"><strong>134 / 0</strong><span>Soak turns completed / failures</span></div>
+    </div>
+
+    <section id="system">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">Selected system</div><h2>One bounded native pipeline.</h2></div>
+          <p>The production profile keeps all model workers local and admits them by measured memory deltas. It does not hardcode a 24 GB assumption into the runtime. The RTX 3090 entry is one hardware-specific profile in a modular configuration.</p>
+        </div>
+
+        <div class="architecture" role="img" aria-label="Microphone audio flows through voice activity detection, turn detection, Parakeet speech recognition, Qwen language generation, clause buffering, Magpie speech synthesis, and Windows speakers. Barge-in cancels playback.">
+          <svg viewBox="0 0 1120 250" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#82d79a"/></marker>
+              <marker id="arrowWarm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e5d6af"/></marker>
+            </defs>
+            <path class="arch-line" marker-end="url(#arrow)" d="M150 92 H180 M320 92 H350 M490 92 H520 M660 92 H690 M830 92 H860 M1000 92 H1030"/>
+            <rect class="arch-node" x="10" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="30" y="83">Microphone</text><text class="arch-sub" x="30" y="106">WASAPI 48 kHz</text>
+            <rect class="arch-node" x="180" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="200" y="83">Turn detector</text><text class="arch-sub" x="200" y="106">Silero + Smart Turn</text>
+            <rect class="arch-node" x="350" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="370" y="83">Parakeet</text><text class="arch-sub" x="370" y="106">CTC 1.1B Q8</text>
+            <rect class="arch-node" x="520" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="540" y="83">Qwen3.5 9B</text><text class="arch-sub" x="540" y="106">Q5, 32K, p1</text>
+            <rect class="arch-node" x="690" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="710" y="83">Clause stream</text><text class="arch-sub" x="710" y="106">Bounded synthesis</text>
+            <rect class="arch-node" x="860" y="48" rx="14" width="140" height="88"/><text class="arch-label" x="880" y="83">Magpie</text><text class="arch-sub" x="880" y="106">NanoCodec PCM</text>
+            <rect class="arch-node" x="1030" y="48" rx="14" width="80" height="88"/><text class="arch-label" x="1048" y="83">Audio</text><text class="arch-sub" x="1048" y="106">Output</text>
+            <path class="arch-control" marker-end="url(#arrowWarm)" d="M80 137 C80 218 1050 218 1070 138"/>
+            <text class="arch-sub" x="430" y="215" fill="#e5d6af">Barge-in stops delivery and playback; the already-started native clause drains safely.</text>
+          </svg>
+        </div>
+
+        <div class="table-wrap" style="margin-top:18px">
+          <table>
+            <thead><tr><th>Stage</th><th>Selected component</th><th>Why it won</th><th>Fallback or control</th></tr></thead>
+            <tbody>
+              <tr><td>STT</td><td><strong>Parakeet CTC 1.1B Q8</strong></td><td>1.69% WER on the fixed English corpus with a 173.3 ms derived partial upper bound.</td><td>Nemotron 3.5 ASR remains the multilingual control.</td></tr>
+              <tr><td>LLM</td><td><strong>Qwen3.5 9B Q5_K_M</strong></td><td>7/7 fixed checks, true 32K context, and 49.23 tok/s minimum generation.</td><td>Q8 matched the rubric but cost speed and memory.</td></tr>
+              <tr><td>TTS</td><td><strong>Magpie v2602 + NanoCodec</strong></td><td>43.81 ms first PCM p95 and 158 incremental PCM reads.</td><td>Kokoro 82M INT8 runs on CPU when memory admission rejects the GPU path.</td></tr>
+              <tr><td>Desktop</td><td><strong>Tauri v2 + React</strong></td><td>Native supervision, Windows audio, local model management, chat transcript, and Wave visualizer.</td><td>No LiveKit session or LiveKit transport logic.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="selection">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">Model selection</div><h2>Measured, then rejected or selected.</h2></div>
+          <p>The matrix used authenticated Hugging Face metadata, pinned revisions and hashes, fixed quality checks, staged VRAM admission, and full-pipeline tests. The rubric is deliberately narrow and reproducible. It is not a broad academic model ranking.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>LLM candidate</th><th>True context</th><th>TTFT p95</th><th>Min generation</th><th>Checks</th><th>Warm GPU</th><th>Decision</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Qwen3.5 9B Q5_K_M</strong></td><td>32K</td><td>58.957 ms</td><td>49.230 tok/s</td><td>7/7</td><td>10,165 MiB</td><td class="decision">Selected</td></tr>
+              <tr><td>Qwen3.5 9B Q8_0</td><td>32K</td><td>68.590 ms</td><td>37.885 tok/s</td><td>7/7</td><td>12,606 MiB</td><td class="decision">Dominated by Q5</td></tr>
+              <tr><td>Qwen3 14B Q5_K_M</td><td>32K</td><td>68.878 ms</td><td>29.559 tok/s</td><td>6/7</td><td>18,160 MiB</td><td class="decision">Dominated</td></tr>
+              <tr><td>Qwen3.6 27B Q4_K_M</td><td>Earlier 16K test</td><td>177.395 ms</td><td>17.197 tok/s</td><td>Not rerun</td><td>20,545 MiB</td><td class="decision">Below speed gate</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="split" style="margin-top:18px">
+          <div class="panel">
+            <div class="eyebrow">Context correction</div>
+            <div class="large">32K, parallel 1</div>
+            <p>llama.cpp divides context across parallel slots. The old 16K, parallel 4 profile gave one conversation about 4K tokens. A 12,034-token needle recall failed there and passed after moving to one true 32K slot.</p>
+          </div>
+          <div class="panel">
+            <div class="eyebrow">STT tradeoff</div>
+            <div class="large">1.69% WER</div>
+            <p>Parakeet was slower than the Nemotron control in raw streaming RTF, but reduced errors from 6.78% to 1.69% on the same six-fixture, 59-word regression corpus.</p>
+            <div class="note">The corpus includes quiet speech, hesitation, acknowledgement, a long question, deterministic noise, and speaker playback with an AEC reference.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="latency">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">End-to-end gates</div><h2>Latency stayed inside every fixed budget.</h2></div>
+          <p>The bars show the observed value as a fraction of its maximum allowed gate. Shorter is better. All values come from the selected 20-turn prerecorded full-clause run, including live LLM delta and TTS PCM delivery.</p>
+        </div>
+
+        <div class="panel gates">
+          <div class="gate-row"><div class="gate-label">First audio p95</div><div class="bar"><span style="--value:27.2%"></span></div><div class="gate-value">489.664 / 1,800 ms</div></div>
+          <div class="gate-row"><div class="gate-label">Warm LLM TTFT p95</div><div class="bar"><span style="--value:8.8%"></span></div><div class="gate-value">79.131 / 900 ms</div></div>
+          <div class="gate-row"><div class="gate-label">ASR partial maximum</div><div class="bar"><span style="--value:16.8%"></span></div><div class="gate-value">42.073 / 250 ms</div></div>
+          <div class="gate-row"><div class="gate-label">Barge-in to silence p95</div><div class="bar"><span style="--value:17.4%"></span></div><div class="gate-value">26.120 / 150 ms</div></div>
+          <div class="gate-row"><div class="gate-label">Warm GPU maximum</div><div class="bar"><span style="--value:57.2%"></span></div><div class="gate-value">13,169 / 23,040 MiB</div></div>
+        </div>
+
+        <div class="split" style="margin-top:18px">
+          <div class="panel"><div class="eyebrow">True streaming proof</div><div class="large">158 PCM reads</div><p>The client received many PCM chunks before the native clause finished. This establishes incremental transport rather than a buffered WAV returned at the end.</p></div>
+          <div class="panel"><div class="eyebrow">Cancellation boundary</div><div class="large">26.12 ms</div><p>Playback and client delivery stop immediately on interruption. The bounded clause already inside the native speech worker drains so that the worker remains stable. Native compute within that clause is not claimed as cancelled.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tests">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">Verification</div><h2>Tests cover components, integration, E2E, soak, and packaging.</h2></div>
+          <p>Prerecorded audio makes the acoustic runs repeatable. The benchmark archive retains raw JSON, WAV inputs and listening pairs, byte counts, and SHA-256 hashes so the headline table can be audited.</p>
+        </div>
+
+        <div class="tests">
+          <div class="test-card"><div class="count">7 / 7</div><h3>Fixed LLM checks</h3><p>Instruction following, recall, formatting, arithmetic, corrected state, JSON contract, and long-context recall.</p></div>
+          <div class="test-card"><div class="count">6 / 6</div><h3>Acoustic scenarios</h3><p>Prerecorded quiet, hesitant, short, long, noisy, and playback/AEC fixtures all passed.</p></div>
+          <div class="test-card"><div class="count">20</div><h3>Full-clause turns</h3><p>End-to-end STT, live LLM streaming, clause synthesis, playback delivery, and cancellation.</p></div>
+          <div class="test-card"><div class="count">30.173 min</div><h3>Continuous soak</h3><p>134 completed turns with zero turn failures, worker failures, or out-of-memory events.</p></div>
+          <div class="test-card"><div class="count">26 / 26</div><h3>Runtime payload hashes</h3><p>The sanitized current-user installer test verified every packaged runtime file.</p></div>
+          <div class="test-card"><div class="count">1 / 1</div><h3>Install lifecycle</h3><p>Install, native window launch, uninstall entry removal, and current-user cleanup passed.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="app">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">Desktop app</div><h2>Minimal controls around a visible local pipeline.</h2></div>
+          <p>The interface uses the visual language of LiveKit Agents UI without LiveKit session behavior. It includes a Wave visualizer, realtime transcript, thinking state, model and license visibility, audio device selection, diagnostics, mute, stop, and interruption controls.</p>
+        </div>
+
+        <div class="gallery">
+          <figure class="figure">
+            <img src="__FASTTALK_SETUP__" alt="FastTalk native setup screen">
+            <figcaption>Full native Tauri window with the fresh model setup state.</figcaption>
+          </figure>
+          <figure class="figure conversation">
+            <img src="__FASTTALK_CONVERSATION__" alt="FastTalk conversation pane with Wave visualizer and transcript area">
+            <figcaption>Conversation pane crop showing the generated mark, Wave visualizer, and transcript surface.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="release">
+      <div class="page">
+        <div class="section-head">
+          <div><div class="eyebrow">Release state</div><h2>Packaged, with four limits stated plainly.</h2></div>
+          <p>The final bundle is a 528,865,212-byte current-user NSIS installer. The locked release workspace tests, strict Clippy gate, frontend production build, Tauri bundle, sanitized install, launch, hash verification, and uninstall all passed.</p>
+        </div>
+
+        <div class="limits">
+          <div class="limit"><strong>Unsigned installer</strong><span>No Authenticode certificate is configured, so code signing remains unverified.</span></div>
+          <div class="limit"><strong>No independent clean VM run</strong><span>The sanitized same-host install test is not described as a clean Windows VM.</span></div>
+          <div class="limit"><strong>No disconnected-host run</strong><span>Offline packaging is implemented, but a true network-disconnected host remains an external release check.</span></div>
+          <div class="limit"><strong>No claimed listening preference</strong><span>Randomized Magpie and Kokoro WAV pairs are archived, but human preference fields are still blank.</span></div>
+        </div>
+
+        <div class="provenance" style="margin-top:22px">
+          <details open><summary>Installer identity</summary><p><span class="mono">FastTalk_0.1.0_x64-setup.exe</span><br>528,865,212 bytes<br><span class="mono hash">8e389302738555b273f3eec33728b17a3d877b711e51879054314669c7fa433f</span></p></details>
+          <details open><summary>Evidence identity</summary><p>Matrix run: <span class="mono">2026-08-11-rtx3090-matrix</span><br>32 archived evidence files<br>Evidence source commit: <span class="mono">6738a72b8ac2fe6cd39ff4da4f8a9f751b24d7a9</span></p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="page">
+      <span>FastTalk v2 implementation results · RTX 3090 reference run</span>
+      <a href="https://github.com/Berkay2002/fasttalk-v2">Source repository</a>
+    </div>
+  </footer>
+</body>
+</html>
