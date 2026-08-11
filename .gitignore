@@ -7,3 +7,4 @@
 /artifacts/matrix/
 /artifacts/dev-app/
 /app/src-tauri/windows/redist/vc_redist.x64.exe
+.html
