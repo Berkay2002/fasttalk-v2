@@ -4,4 +4,5 @@
 /artifacts/feasibility/*
 !/artifacts/feasibility/.gitkeep
 /artifacts/release/
+/artifacts/matrix/
 /app/src-tauri/windows/redist/vc_redist.x64.exe
