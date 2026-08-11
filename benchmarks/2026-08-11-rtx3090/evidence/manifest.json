@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "runId": "2026-08-11-rtx3090",
-  "sourceCommit": "9c03c52131686351399589e2a4509b0de00ef4ea",
+  "sourceCommit": "6883f6151fcd65f00976ab13c607ab57328ecf06",
   "files": [
     {
       "file": "preflight.json",
@@ -110,6 +110,18 @@
       "source": "artifacts/release/gate-report.json",
       "bytes": 3289,
       "sha256": "823692b606c80bd9d7a6e64e650cfbf0ef469f27b1042fa46ce29aed2ebcc725"
+    },
+    {
+      "file": "installer-sanitized.json",
+      "source": "artifacts/release/installer-sanitized.json",
+      "bytes": 360,
+      "sha256": "41f6d80ae08b5cb16af24fca2907222e38e92d287efe2f7f6063f8e9e927b7c5"
+    },
+    {
+      "file": "unsigned-release-manifest.json",
+      "source": "artifacts/release/release-manifest.json",
+      "bytes": 7891,
+      "sha256": "591db83c67391d25c43e1733f7efc15537e38065ed0ec3b6236040a7d9ec79f9"
     }
   ]
 }

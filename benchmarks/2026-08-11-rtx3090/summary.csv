@@ -40,3 +40,6 @@ soak,qwen3.5-asr-magpie,continuous warm conversation,124,completed_turns,124,cou
 soak,qwen3.5-asr-magpie,continuous warm conversation,124,oom_count,0,count,0,pass,conversation-30-minute-soak.json
 soak,qwen3.5-asr-magpie,continuous warm conversation,124,worker_failure_count,0,count,0,pass,conversation-30-minute-soak.json
 acoustic,qwen3.5-asr-magpie,six generated prerecorded scenarios,6,scenario_transcript_checks,6,count,6,pass,acoustic-scenarios.json
+packaging,fasttalk-0.1.0,current-user NSIS sanitized environment,26,runtime_hash_checks,26,count,26,pass,installer-sanitized.json
+packaging,fasttalk-0.1.0,current-user NSIS sanitized environment,1,window_opened,1,boolean,1,pass,installer-sanitized.json
+packaging,fasttalk-0.1.0,current-user NSIS sanitized environment,1,uninstall_cleanup,1,boolean,1,pass,installer-sanitized.json

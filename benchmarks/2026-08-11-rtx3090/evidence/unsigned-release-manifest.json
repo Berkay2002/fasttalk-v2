@@ -1,0 +1,212 @@
+{
+  "builtAtUtc": "2026-08-11T00:50:17.8139647Z",
+  "commit": "6883f6151fcd65f00976ab13c607ab57328ecf06",
+  "signedRelease": false,
+  "artifacts": [
+    {
+      "path": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\target\\release\\fasttalk-app.exe",
+      "sizeBytes": 15828480,
+      "sha256": "ac36943e68ac36bb0b5c8e5a8d29b791b3a79f1539c97c3cbc2371ba97c55143",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\target\\release\\bundle\\nsis\\FastTalk_0.1.0_x64-setup.exe",
+      "sizeBytes": 510843025,
+      "sha256": "36e061185ba9c04fe143c0251847666aeee5662ebd3e1cbf0e07ae9eeff08eef",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\app\\src-tauri\\windows\\redist\\vc_redist.x64.exe",
+      "sizeBytes": 18731856,
+      "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
+      "signatureStatus": "Valid",
+      "signer": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+    }
+  ],
+  "runtime": [
+    {
+      "path": "runtime\\asr\\abseil_dll.dll",
+      "sizeBytes": 2008576,
+      "sha256": "142f948d888cbad3dcb88ccddf3977a9dbdce1af65e8f3888c142f48c165eeb6",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\ggml-base.dll",
+      "sizeBytes": 628736,
+      "sha256": "e78a7b4adf32e0de7099617148d07b50dcc588009ac18394ba7aac09391af837",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\ggml-cpu.dll",
+      "sizeBytes": 829440,
+      "sha256": "c92480075f0396ec32da98aacb81129935847c12c23f5bd15128345d01a50743",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\ggml-cuda.dll",
+      "sizeBytes": 32450560,
+      "sha256": "52809b85786971b13149c418d9cb8824c77523937218afaba468219b658cad3f",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\ggml.dll",
+      "sizeBytes": 67072,
+      "sha256": "4a38ac311051efdcb69af61dae944ade4bcfbcb8b2da5dfdffa9dcd1e84a6851",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\libprotobuf.dll",
+      "sizeBytes": 11423232,
+      "sha256": "8da36c3b6416eb29e467e0ab7c5ea60aac65005140adf82d5c099d866be93216",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\nemo_speech_asr_c.dll",
+      "sizeBytes": 55296,
+      "sha256": "1a0630116a5002895d8a63adfc5659bbb5ed18dafba326a6c3423854453c0524",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\nemo_speech_asr.dll",
+      "sizeBytes": 3849216,
+      "sha256": "a7bea8b9cb287164356ea120934b3d488b9cff0a00303c3017cdc22de53648b2",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\nemo_speech_tts.dll",
+      "sizeBytes": 1788416,
+      "sha256": "02aa19aed4eefe0387c546113eec741598b78ba43f585b78d0bbacd6916c61cc",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\asr\\nemo-speech.exe",
+      "sizeBytes": 923136,
+      "sha256": "3f4cb36249a0856a25cee5a8b8ee8d1dfc41886abb66cdfd9f1de19b53e5184f",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\cuda-13.3\\cublas64_13.dll",
+      "sizeBytes": 52697712,
+      "sha256": "8c6bac24474af29627ec96500025a5d410a1b7e8ffa00e1fe13b1781fc6b3ddc",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\cuda-13.3\\cublasLt64_13.dll",
+      "sizeBytes": 463655536,
+      "sha256": "e323abd89e0f03c1db91a09d7aeb1928de08e1f86192cc713b335fefe3e368a9",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\cuda-13.3\\cudart64_13.dll",
+      "sizeBytes": 551024,
+      "sha256": "b00ca6f53699120da815bf3e06e2e4285fae2f201235b883dcbb50eec51e2a2a",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\cuda-13.3\\nvJitLink_130_0.dll",
+      "sizeBytes": 92465776,
+      "sha256": "727a0acfc4495b229143b53843004eef36e0a3463fb2e1c7c4215468607fd613",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\cuda-13.3\\nvrtc-builtins64_133.dll",
+      "sizeBytes": 6684784,
+      "sha256": "82c703802846329d3bab3d8df06f8c956516a0eeec568033092d6c0a69b2733a",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\cuda-13.3\\nvrtc64_130_0.dll",
+      "sizeBytes": 101385328,
+      "sha256": "c7af6b5dbd001852d1b4a18effc6fbcfc94787eddadffea629a8333cb25b05fe",
+      "signatureStatus": "Valid",
+      "signer": "CN=NVIDIA Corporation, OU=1005bk6, O=NVIDIA Corporation, L=Santa Clara, S=California, C=US"
+    },
+    {
+      "path": "runtime\\llm\\ggml-base.dll",
+      "sizeBytes": 651776,
+      "sha256": "6e1d5d9dd9cd6d6eefa2ca737a3bb8ee4caf43acbe6b2719bff0086f933ada07",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\ggml-cpu.dll",
+      "sizeBytes": 904192,
+      "sha256": "3cda211cba44b58756c2024b34267642ba713a02541513f7bce91ead2ae8b6ac",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\ggml-cuda.dll",
+      "sizeBytes": 31453184,
+      "sha256": "74de619c54063b5708383fea85e07c10ff681f12cc60b95db7a5d778b2c7c640",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\ggml.dll",
+      "sizeBytes": 67072,
+      "sha256": "b49386453a305f5b805d35a721bc52880824979ccb76b033f572eef93a2231a6",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\llama-common.dll",
+      "sizeBytes": 9489408,
+      "sha256": "f7c5d283bee9eb84ca5e956b184a068c81f0087c69a60da9d50edeb0b1174009",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\llama-server-impl.dll",
+      "sizeBytes": 14193152,
+      "sha256": "99cd25e8ddf967515b7b460c238230ebc5220380ef76c111c583cb89553aa205",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\llama-server.exe",
+      "sizeBytes": 10752,
+      "sha256": "9909d54575f53b12b1e6290c6ce4c9e17c0400588f01f9800a0bf6760420db79",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\llama.dll",
+      "sizeBytes": 2395136,
+      "sha256": "6e8f66f9ab29d830f5e8f55401ce958f0f022de338df4f66eff8d9b83b040968",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\llm\\mtmd.dll",
+      "sizeBytes": 1145856,
+      "sha256": "50b1c5ae78303c03b43af9379edb661f6268af76a376531f430b1231a735ce79",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    },
+    {
+      "path": "runtime\\tts\\kokoro-worker.exe",
+      "sizeBytes": 20458496,
+      "sha256": "ebb15d3b0fe960cced0aa57435e8518281d3adcb0d46be05319f760c379f0ebe",
+      "signatureStatus": "NotSigned",
+      "signer": null
+    }
+  ]
+}

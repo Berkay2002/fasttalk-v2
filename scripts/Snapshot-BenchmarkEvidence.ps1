@@ -28,7 +28,9 @@ $sources = @(
     @{ Source = "artifacts/release/conversation-benchmark.json"; Name = "conversation-20-turn.json"; Required = $true },
     @{ Source = "artifacts/release/acoustic-scenarios/summary.json"; Name = "acoustic-scenarios.json"; Required = $true },
     @{ Source = "artifacts/release/conversation-soak.json"; Name = "conversation-30-minute-soak.json"; Required = $false },
-    @{ Source = "artifacts/release/gate-report.json"; Name = "release-gates.json"; Required = $true }
+    @{ Source = "artifacts/release/gate-report.json"; Name = "release-gates.json"; Required = $true },
+    @{ Source = "artifacts/release/installer-sanitized.json"; Name = "installer-sanitized.json"; Required = $true },
+    @{ Source = "artifacts/release/release-manifest.json"; Name = "unsigned-release-manifest.json"; Required = $true }
 )
 
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null

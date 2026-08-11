@@ -141,3 +141,25 @@ the control:
 
 Machine-readable metrics are in [`summary.csv`](summary.csv). Small raw JSON
 outputs and their hashes are in [`evidence`](evidence/manifest.json).
+
+## Packaging verification
+
+The current-user NSIS installer was built from commit `6883f61`. The sanitized
+test removed Node, Rust, Python, CUDA toolkit, and related development paths
+from the child process environment, silently installed the package, verified
+all 26 bundled runtime files by SHA-256, opened the FastTalk window, and then
+verified uninstall cleanup.
+
+| Item | Result |
+| --- | --- |
+| Installer SHA-256 | `36e061185ba9c04fe143c0251847666aeee5662ebd3e1cbf0e07ae9eeff08eef` |
+| Current-user install | Pass |
+| Sanitized launch | Pass |
+| Runtime files hash-verified | 26 |
+| Uninstall registry and directory cleanup | Pass |
+| Authenticode signing | Not run, no code-signing certificate is installed |
+| True clean Windows VM | Not run, Windows Sandbox is absent and Hyper-V access is denied by host policy |
+| True offline operation | Not run, the active Ethernet connection cannot be disabled without administrator access |
+
+The sanitized launch is useful packaging evidence, but it is not mislabeled as
+a clean-machine or network-disabled result.
