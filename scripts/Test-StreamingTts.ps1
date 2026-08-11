@@ -14,6 +14,7 @@ $stderr = Join-Path $artifactDir "magpie-streaming-transport.stderr.log"
 $process = Start-Process -FilePath (Join-Path $workspace "runtime/asr/nemo-speech.exe") `
     -ArgumentList @(
         "serve",
+        "--asr-model", (Join-Path $workspace ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
         "--tts-model", (Join-Path $workspace ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
         "--codec-model", (Join-Path $workspace ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
         "--tokenizer-dir", (Join-Path $workspace ".cache/models/magpie-tts/extracted"),
@@ -96,7 +97,8 @@ try {
     $timer.Stop()
     $completeMs = [math]::Round($timer.Elapsed.TotalMilliseconds, 3)
 
-    $cancelRequest = New-SpeechRequest "This deliberately long response proves that dropping the PCM stream cancels native synthesis before the sentence can finish speaking."
+    $cancelText = ("This long cancellation probe keeps local speech synthesis active long enough to interrupt it after its first audio frame. " * 12).Trim()
+    $cancelRequest = New-SpeechRequest $cancelText
     $cancelResponse = $client.SendAsync(
         $cancelRequest,
         [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
@@ -109,6 +111,15 @@ try {
     $cancelResponse.Dispose()
     $cancelRequest.Dispose()
     $cancelTimer.Stop()
+
+    Start-Sleep -Seconds 2
+    if ($process.HasExited) {
+        throw "nemo-speech crashed after stream cancellation ($($process.ExitCode)): $(Get-Content -Raw $stderr)"
+    }
+    $postCancellationReady = Invoke-RestMethod "http://127.0.0.1:$Port/ready" -TimeoutSec 2
+    if ($postCancellationReady.ready -ne $true) {
+        throw "nemo-speech was not ready after stream cancellation."
+    }
 
     if (-not $chunked) { throw "PCM response did not use HTTP chunked transfer." }
     if ($reads.Count -lt 2) { throw "PCM response did not produce multiple client reads." }
@@ -123,6 +134,7 @@ try {
         readCount = $reads.Count
         reads = $reads
         responseDisposeMs = [math]::Round($cancelTimer.Elapsed.TotalMilliseconds, 3)
+        workerReadyAfterCancellation = $true
     }
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outputPath -Encoding utf8
     $report | ConvertTo-Json -Depth 5

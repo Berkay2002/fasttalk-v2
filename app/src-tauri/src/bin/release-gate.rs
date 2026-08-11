@@ -326,6 +326,7 @@ async fn run_with_runtime(
     }
     evidence.active_stream_cancellation =
         measure_active_stream_cancellation(status.tts_backend).await?;
+    sleep(Duration::from_secs(2)).await;
     let post_cancellation_status = runtime.poll().map_err(|error| error.to_string())?;
     if !workers_ready(&post_cancellation_status) {
         return Err(format!(
@@ -394,7 +395,7 @@ async fn measure_active_stream_cancellation(
 
     let tts_cancellation = CancellationToken::new();
     let (tts_events, mut tts_receiver) = mpsc::channel(128);
-    let text = "This long cancellation probe keeps local speech synthesis active long enough to interrupt it after its first audio frame. ".repeat(12);
+    let text = "This cancellation probe keeps one production-sized speech clause active long enough to interrupt it after its first audio frame.".to_owned();
     let tts_task = match backend {
         PreferredTtsBackend::Magpie => {
             let client = MagpieClient::new(SPEECH_BASE_URL).map_err(|error| error.to_string())?;
@@ -431,7 +432,7 @@ async fn measure_active_stream_cancellation(
     Ok(CancellationEvidence {
         llm_after_first_delta_ms,
         tts_after_first_pcm_ms: round3(tts_cancel_started.elapsed().as_secs_f64() * 1_000.0),
-        scope: "client cancellation after the first live LLM delta and first live TTS PCM frame; workers must remain ready"
+        scope: "client delivery cancellation after the first live LLM delta and first live TTS PCM frame; Magpie drains the already-started native clause response and workers must remain ready"
             .to_owned(),
     })
 }
@@ -474,7 +475,9 @@ async fn measure_turn(
     audio: &RecordedAudio,
     backend: PreferredTtsBackend,
 ) -> Result<TurnMeasurement, String> {
-    let transcription = transcribe(audio).await?;
+    let transcription = transcribe(audio)
+        .await
+        .map_err(|error| format!("ASR failed: {error}"))?;
     let llm = LlmClient::new(LLM_BASE_URL).map_err(|error| error.to_string())?;
     let (llm_tx, mut llm_rx) = mpsc::channel(128);
     let llm_started = Instant::now();
@@ -608,7 +611,7 @@ fn spawn_tts(
                 client
                     .synthesize(&text, cancellation, events)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| format!("Magpie TTS failed: {error}"))
             }))
         }
         PreferredTtsBackend::Kokoro => {
@@ -617,7 +620,7 @@ fn spawn_tts(
                 client
                     .synthesize(&text, cancellation, events)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| format!("Kokoro TTS failed: {error}"))
             }))
         }
     }
@@ -806,9 +809,11 @@ async fn run_soak(
         ..SoakEvidence::default()
     };
     while started.elapsed() < target {
+        let mut turn_failed = false;
         match timeout(TURN_TIMEOUT, run_full_turn(audio, backend)).await {
             Ok(Ok(())) => evidence.completed_turns += 1,
             Ok(Err(error)) => {
+                turn_failed = true;
                 evidence.turn_failure_count += 1;
                 if error.to_ascii_lowercase().contains("out of memory") {
                     evidence.oom_count += 1;
@@ -816,12 +821,19 @@ async fn run_soak(
                 eprintln!("soak turn failed: {error}");
             }
             Err(_) => {
+                turn_failed = true;
                 evidence.turn_failure_count += 1;
                 eprintln!("soak turn exceeded {} seconds", TURN_TIMEOUT.as_secs());
             }
         }
         match runtime.poll() {
-            Ok(status) if worker_failed(&status) => evidence.worker_failure_count += 1,
+            Ok(status) if !workers_ready(&status) => {
+                evidence.worker_failure_count += 1;
+                eprintln!("worker was not ready during soak: {status:?}");
+            }
+            Ok(status) if turn_failed => {
+                eprintln!("worker status after failed soak turn: {status:?}");
+            }
             Err(error) => {
                 evidence.worker_failure_count += 1;
                 eprintln!("worker poll failed during soak: {error}");

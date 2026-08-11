@@ -65,7 +65,16 @@ impl MagpieClient {
         let mut resampler = StreamingResampler::new(MAGPIE_SAMPLE_RATE)?;
         loop {
             let chunk = tokio::select! {
-                _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
+                _ = cancellation.cancelled() => {
+                    tokio::spawn(async move {
+                        while let Some(chunk) = stream.next().await {
+                            if chunk.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                    return Err(PipelineError::Cancelled);
+                },
                 chunk = stream.next() => chunk,
             };
             let Some(chunk) = chunk else { break };
