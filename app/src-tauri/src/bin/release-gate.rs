@@ -125,6 +125,14 @@ struct SoakEvidence {
     worker_failure_count: usize,
 }
 
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CancellationEvidence {
+    llm_after_first_delta_ms: f64,
+    tts_after_first_pcm_ms: f64,
+    scope: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConversationEvidence {
@@ -143,6 +151,7 @@ struct ConversationEvidence {
     barge_in_measurement_scope: String,
     capture_preprocessing_scope: String,
     warmed_gpu_memory_mib: Vec<f64>,
+    active_stream_cancellation: CancellationEvidence,
     soak: SoakEvidence,
 }
 
@@ -234,6 +243,7 @@ async fn run_with_runtime(
         }
         .to_owned(),
         warmed_gpu_memory_mib: Vec::new(),
+        active_stream_cancellation: CancellationEvidence::default(),
         soak: SoakEvidence {
             requested_minutes: args.soak_minutes,
             ..SoakEvidence::default()
@@ -288,6 +298,14 @@ async fn run_with_runtime(
             args.turns,
         )?;
     }
+    evidence.active_stream_cancellation =
+        measure_active_stream_cancellation(status.tts_backend).await?;
+    let post_cancellation_status = runtime.poll().map_err(|error| error.to_string())?;
+    if !workers_ready(&post_cancellation_status) {
+        return Err(format!(
+            "native workers were not ready after cancellation probes: {post_cancellation_status:?}"
+        ));
+    }
     if args.soak_minutes > 0.0 {
         evidence.soak = run_soak(audio, status.tts_backend, runtime, args.soak_minutes).await;
     }
@@ -300,6 +318,96 @@ async fn run_with_runtime(
     fs::write(&args.output, json).map_err(|error| error.to_string())?;
     println!("wrote {}", args.output.display());
     Ok(())
+}
+
+async fn measure_active_stream_cancellation(
+    backend: PreferredTtsBackend,
+) -> Result<CancellationEvidence, String> {
+    let llm = LlmClient::new(LLM_BASE_URL).map_err(|error| error.to_string())?;
+    let llm_cancellation = CancellationToken::new();
+    let (llm_events, mut llm_receiver) = mpsc::channel(128);
+    let llm_task = tokio::spawn({
+        let cancellation = llm_cancellation.clone();
+        async move {
+            llm.stream_reply(
+                vec![ChatMessage {
+                    role: "user".to_owned(),
+                    content: "Write a detailed 400-word explanation of local speech pipelines."
+                        .to_owned(),
+                }],
+                cancellation,
+                llm_events,
+            )
+            .await
+        }
+    });
+    loop {
+        match timeout(Duration::from_secs(10), llm_receiver.recv()).await {
+            Ok(Some(LlmEvent::Delta(_))) => break,
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Err("LLM cancellation probe ended before the first delta".to_owned());
+            }
+            Err(_) => {
+                return Err("LLM cancellation probe emitted no delta within 10 seconds".to_owned());
+            }
+        }
+    }
+    let llm_cancel_started = Instant::now();
+    llm_cancellation.cancel();
+    let llm_result = timeout(Duration::from_secs(2), llm_task)
+        .await
+        .map_err(|_| "active LLM stream did not cancel within 2 seconds".to_owned())?
+        .map_err(|error| format!("LLM cancellation task failed: {error}"))?;
+    if !matches!(llm_result, Err(fasttalk_pipeline::PipelineError::Cancelled)) {
+        return Err(format!(
+            "active LLM stream returned an unexpected cancellation result: {llm_result:?}"
+        ));
+    }
+    let llm_after_first_delta_ms = round3(llm_cancel_started.elapsed().as_secs_f64() * 1_000.0);
+
+    let tts_cancellation = CancellationToken::new();
+    let (tts_events, mut tts_receiver) = mpsc::channel(128);
+    let text = "This long cancellation probe keeps local speech synthesis active long enough to interrupt it after its first audio frame. ".repeat(12);
+    let tts_task = match backend {
+        PreferredTtsBackend::Magpie => {
+            let client = MagpieClient::new(SPEECH_BASE_URL).map_err(|error| error.to_string())?;
+            let cancellation = tts_cancellation.clone();
+            tokio::spawn(async move { client.synthesize(&text, cancellation, tts_events).await })
+        }
+        PreferredTtsBackend::Kokoro => {
+            let client = KokoroClient::new(KOKORO_BASE_URL).map_err(|error| error.to_string())?;
+            let cancellation = tts_cancellation.clone();
+            tokio::spawn(async move { client.synthesize(&text, cancellation, tts_events).await })
+        }
+    };
+    loop {
+        match timeout(Duration::from_secs(30), tts_receiver.recv()).await {
+            Ok(Some(TtsEvent::Pcm48KhzMono(samples))) if !samples.is_empty() => break,
+            Ok(Some(_)) => {}
+            Ok(None) => return Err("TTS cancellation probe ended before the first PCM".to_owned()),
+            Err(_) => {
+                return Err("TTS cancellation probe emitted no PCM within 30 seconds".to_owned());
+            }
+        }
+    }
+    let tts_cancel_started = Instant::now();
+    tts_cancellation.cancel();
+    let tts_result = timeout(Duration::from_secs(2), tts_task)
+        .await
+        .map_err(|_| "active TTS stream did not cancel within 2 seconds".to_owned())?
+        .map_err(|error| format!("TTS cancellation task failed: {error}"))?;
+    if !matches!(tts_result, Err(fasttalk_pipeline::PipelineError::Cancelled)) {
+        return Err(format!(
+            "active TTS stream returned an unexpected cancellation result: {tts_result:?}"
+        ));
+    }
+    Ok(CancellationEvidence {
+        llm_after_first_delta_ms,
+        tts_after_first_pcm_ms: round3(tts_cancel_started.elapsed().as_secs_f64() * 1_000.0),
+        scope: "client cancellation after the first live LLM delta and first live TTS PCM frame; workers must remain ready"
+            .to_owned(),
+    })
 }
 
 async fn wait_for_workers(runtime: &mut NativeRuntime) -> Result<NativeRuntimeStatus, String> {
