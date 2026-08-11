@@ -64,6 +64,7 @@ pub struct AudioStatus {
     pub output_device: String,
     pub sample_rate_hz: u32,
     pub speech_active: bool,
+    pub interruption_active: bool,
     pub queued_playback_samples: usize,
     pub dropped_capture_samples: u64,
     pub dropped_playback_samples: u64,
@@ -103,6 +104,7 @@ struct SharedState {
     running: AtomicBool,
     muted: AtomicBool,
     speech_active: AtomicBool,
+    interruption_active: AtomicBool,
     cancel_epoch: AtomicU64,
     cancel_requested_micros: AtomicU64,
     cancel_latency_micros: AtomicU64,
@@ -119,6 +121,7 @@ impl SharedState {
             running: AtomicBool::new(true),
             muted: AtomicBool::new(false),
             speech_active: AtomicBool::new(false),
+            interruption_active: AtomicBool::new(false),
             cancel_epoch: AtomicU64::new(0),
             cancel_requested_micros: AtomicU64::new(0),
             cancel_latency_micros: AtomicU64::new(0),
@@ -371,6 +374,7 @@ impl AudioEngine {
             output_device: self.output_device.clone(),
             sample_rate_hz: DEVICE_SAMPLE_RATE,
             speech_active: self.shared.speech_active.load(Ordering::Acquire),
+            interruption_active: self.shared.interruption_active.load(Ordering::Acquire),
             queued_playback_samples: self.playback_producer.occupied_len(),
             dropped_capture_samples: self.shared.dropped_capture.load(Ordering::Relaxed),
             dropped_playback_samples: self.shared.dropped_playback.load(Ordering::Relaxed),
@@ -495,14 +499,19 @@ fn run_processor(
             reference_consumer.skip(reference_backlog - maximum_reference_backlog);
         }
         reference_consumer.pop_slice(&mut reference);
-        let output = match processor.process(&capture, &reference) {
-            Ok(output) => output,
-            Err(error) => {
-                shared.record_error(error);
-                shared.running.store(false, Ordering::Release);
-                break;
-            }
-        };
+        let output =
+            match processor.process_with_interruption(&capture, &reference, |interruption_active| {
+                shared
+                    .interruption_active
+                    .store(interruption_active, Ordering::Release);
+            }) {
+                Ok(output) => output,
+                Err(error) => {
+                    shared.record_error(error);
+                    shared.running.store(false, Ordering::Release);
+                    break;
+                }
+            };
         shared
             .speech_active
             .store(output.speech_active, Ordering::Release);

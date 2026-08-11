@@ -258,7 +258,7 @@ async fn run_with_runtime(
         barge_in_to_silence_ms: Vec::new(),
         barge_in_onset_to_vad_ms: Vec::new(),
         barge_in_cancel_to_callback_ms: Vec::new(),
-        barge_in_measurement_scope: "prerecorded speech onset through production AEC and Silero VAD, cancellation dispatch, and WASAPI output callback acknowledgement".to_owned(),
+        barge_in_measurement_scope: "prerecorded speech onset through production AEC and the fast energy interruption detector, cancellation dispatch, and WASAPI output callback acknowledgement; Silero remains the speech-state and endpointing detector".to_owned(),
         capture_preprocessing_scope: if args.reference.is_some() {
             "prerecorded capture and paired playback reference are upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection"
         } else {
@@ -733,6 +733,7 @@ fn measure_barge_in(
         let mut reference_offset = 0;
         let cancellation = CancellationToken::new();
         let mut detected = false;
+        let mut onset_to_interrupt_ms = None;
         for source_start in (start_sample..speech.samples.len()).step_by(ASR_SAMPLE_RATE / 100) {
             let source_end = (source_start + ASR_SAMPLE_RATE / 100).min(speech.samples.len());
             if speech_onset.is_none()
@@ -753,17 +754,31 @@ fn measure_barge_in(
                 capture[index] = foreground + reference[index] * 0.15;
             }
             reference_offset = (reference_offset + DEVICE_FRAME_SAMPLES) % fixture.len();
-            let frame = processor.process(&capture, &reference)?;
-            if frame.speech_active {
-                let onset = speech_onset.ok_or_else(|| {
-                    "Silero detected playback before user speech onset".to_owned()
-                })?;
-                measurements
-                    .onset_to_vad_ms
-                    .push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
+            let mut triggered_before_onset = false;
+            processor.process_with_interruption(&capture, &reference, |interruption_active| {
+                if !interruption_active || detected {
+                    return;
+                }
+                let Some(onset) = speech_onset else {
+                    triggered_before_onset = true;
+                    return;
+                };
+                onset_to_interrupt_ms = Some(round3(onset.elapsed().as_secs_f64() * 1_000.0));
                 cancellation.cancel();
                 engine.cancel_playback();
                 detected = true;
+            })?;
+            if triggered_before_onset {
+                return Err(
+                    "post-AEC interruption detector triggered on playback before user speech onset"
+                        .to_owned(),
+                );
+            }
+            if detected {
+                measurements.onset_to_vad_ms.push(
+                    onset_to_interrupt_ms
+                        .ok_or_else(|| "barge-in interruption timestamp is missing".to_owned())?,
+                );
                 break;
             }
             if speech_onset.is_some() {
@@ -771,19 +786,22 @@ fn measure_barge_in(
             }
         }
         if !detected || !cancellation.is_cancelled() {
-            return Err("Silero did not detect the prerecorded barge-in speech".to_owned());
+            return Err(
+                "post-AEC interruption detector did not detect the prerecorded barge-in speech"
+                    .to_owned(),
+            );
         }
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
             if let Some(cancel_to_callback_ms) = engine.status().last_cancel_to_callback_ms {
-                let onset = speech_onset
-                    .ok_or_else(|| "barge-in speech onset was not observed".to_owned())?;
                 measurements
                     .cancel_to_callback_ms
                     .push(round3(cancel_to_callback_ms));
-                measurements
-                    .onset_to_silence_ms
-                    .push(round3(onset.elapsed().as_secs_f64() * 1_000.0));
+                measurements.onset_to_silence_ms.push(round3(
+                    onset_to_interrupt_ms
+                        .ok_or_else(|| "barge-in interruption timestamp is missing".to_owned())?
+                        + cancel_to_callback_ms,
+                ));
                 break;
             }
             if Instant::now() >= deadline {

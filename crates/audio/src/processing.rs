@@ -11,6 +11,7 @@ pub const ASR_FRAME_SAMPLES: usize = (ASR_SAMPLE_RATE / 100) as usize;
 pub struct ProcessedCaptureFrame {
     pub asr_samples: [f32; ASR_FRAME_SAMPLES],
     pub speech_active: bool,
+    pub interruption_active: bool,
 }
 
 pub struct CaptureProcessor {
@@ -31,13 +32,25 @@ impl CaptureProcessor {
         capture: &[f32; DEVICE_FRAME_SAMPLES],
         playback_reference: &[f32; DEVICE_FRAME_SAMPLES],
     ) -> Result<ProcessedCaptureFrame, String> {
+        self.process_with_interruption(capture, playback_reference, |_| {})
+    }
+
+    pub fn process_with_interruption(
+        &mut self,
+        capture: &[f32; DEVICE_FRAME_SAMPLES],
+        playback_reference: &[f32; DEVICE_FRAME_SAMPLES],
+        mut on_interruption: impl FnMut(bool),
+    ) -> Result<ProcessedCaptureFrame, String> {
         let mut asr_samples = [0.0; ASR_FRAME_SAMPLES];
         self.aec
             .process(capture, playback_reference, &mut asr_samples)?;
-        let speech_active = self.detector.update(&asr_samples);
+        let interruption_active = self.detector.update_interruption(&asr_samples);
+        on_interruption(interruption_active);
+        let speech_active = self.detector.update_speech(&asr_samples);
         Ok(ProcessedCaptureFrame {
             asr_samples,
             speech_active,
+            interruption_active,
         })
     }
 }
@@ -129,7 +142,7 @@ impl EnergySpeechDetector {
 
 impl Default for EnergySpeechDetector {
     fn default() -> Self {
-        Self::new(0.015, 3, 10)
+        Self::new(0.015, 2, 10)
     }
 }
 
@@ -169,12 +182,16 @@ impl SpeechDetector {
         })
     }
 
-    pub fn update(&mut self, samples: &[f32]) -> bool {
+    pub fn update_interruption(&mut self, samples: &[f32]) -> bool {
+        self.energy_fallback.update(samples)
+    }
+
+    pub fn update_speech(&self, samples: &[f32]) -> bool {
         if let Some(detector) = &self.silero {
             detector.accept_waveform(samples);
             detector.detected()
         } else {
-            self.energy_fallback.update(samples)
+            self.energy_fallback.active
         }
     }
 }
@@ -218,7 +235,7 @@ mod tests {
     fn pinned_silero_model_accepts_audio() {
         let model = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../.cache/models/silero-vad/silero_vad_16k_op15.onnx");
-        let mut detector = SpeechDetector::new(Some(&model)).unwrap();
-        assert!(!detector.update(&[0.0; ASR_FRAME_SAMPLES]));
+        let detector = SpeechDetector::new(Some(&model)).unwrap();
+        assert!(!detector.update_speech(&[0.0; ASR_FRAME_SAMPLES]));
     }
 }

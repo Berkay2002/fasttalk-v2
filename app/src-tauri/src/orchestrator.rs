@@ -114,14 +114,20 @@ async fn run(
             }
             _ = interval.tick() => {
                 reap_finished_turn(&mut turn).await;
-                let (sample_count, speech_active) = read_audio(&audio, &mut audio_samples)?;
+                let (sample_count, speech_active, interruption_active) =
+                    read_audio(&audio, &mut audio_samples)?;
                 if sample_count > 0 && !awaiting_commit {
                     asr_sender.send_f32(&audio_samples[..sample_count]).await?;
                     turn_audio.extend_from_slice(&audio_samples[..sample_count]);
                 }
 
                 let state = snapshot_state(&engine)?;
-                let decision = activity.update(speech_active, state, Instant::now());
+                let decision = activity.update(
+                    speech_active,
+                    interruption_active,
+                    state,
+                    Instant::now(),
+                );
                 if decision.interrupt {
                     interrupt_turn(&app, &engine, &audio, &mut turn)?;
                 }
@@ -472,7 +478,10 @@ async fn wait_for_playback_drain(
     }
 }
 
-fn read_audio(audio: &SharedAudio, output: &mut [f32]) -> Result<(usize, bool), PipelineError> {
+fn read_audio(
+    audio: &SharedAudio,
+    output: &mut [f32],
+) -> Result<(usize, bool, bool), PipelineError> {
     let mut guard = audio
         .lock()
         .map_err(|_| PipelineError::Protocol("audio lock is poisoned".to_owned()))?;
@@ -480,7 +489,8 @@ fn read_audio(audio: &SharedAudio, output: &mut [f32]) -> Result<(usize, bool), 
         .as_mut()
         .ok_or_else(|| PipelineError::Protocol("audio is not running".to_owned()))?;
     let count = engine.read_asr_samples(output);
-    Ok((count, engine.status().speech_active))
+    let status = engine.status();
+    Ok((count, status.speech_active, status.interruption_active))
 }
 
 fn audio_status(audio: &SharedAudio) -> Result<fasttalk_audio::AudioStatus, PipelineError> {
@@ -584,38 +594,44 @@ struct VoiceDecision {
 
 #[derive(Debug, Default)]
 struct VoiceActivity {
-    active: bool,
+    interruption_active: bool,
     speech_seen: bool,
     last_active: Option<Instant>,
     endpoint_checked: bool,
 }
 
 impl VoiceActivity {
-    fn update(&mut self, active: bool, state: ConversationState, now: Instant) -> VoiceDecision {
-        let interrupt = active
-            && !self.active
+    fn update(
+        &mut self,
+        speech_active: bool,
+        interruption_active: bool,
+        state: ConversationState,
+        now: Instant,
+    ) -> VoiceDecision {
+        let interrupt = interruption_active
+            && !self.interruption_active
             && matches!(
                 state,
                 ConversationState::Thinking | ConversationState::Speaking
             );
-        if active {
+        if speech_active {
             self.speech_seen = true;
             self.last_active = Some(now);
             self.endpoint_checked = false;
         }
-        self.active = active;
+        self.interruption_active = interruption_active;
         let silence = self
             .last_active
             .map(|last_active| now.duration_since(last_active));
         let endpoint_check = self.speech_seen
-            && !active
+            && !speech_active
             && !self.endpoint_checked
             && silence.is_some_and(|silence| silence >= ENDPOINT_SILENCE);
         if endpoint_check {
             self.endpoint_checked = true;
         }
         let force_commit = self.speech_seen
-            && !active
+            && !speech_active
             && silence.is_some_and(|silence| silence >= MAX_ENDPOINT_SILENCE);
         VoiceDecision {
             interrupt,
@@ -625,6 +641,7 @@ impl VoiceActivity {
     }
 
     fn committed(&mut self) {
+        self.interruption_active = false;
         self.speech_seen = false;
         self.last_active = None;
         self.endpoint_checked = false;
@@ -640,12 +657,13 @@ mod tests {
         let start = Instant::now();
         let mut activity = VoiceActivity::default();
         assert_eq!(
-            activity.update(true, ConversationState::Listening, start),
+            activity.update(true, true, ConversationState::Listening, start),
             VoiceDecision::default()
         );
         assert!(
             !activity
                 .update(
+                    false,
                     false,
                     ConversationState::Listening,
                     start + Duration::from_millis(299)
@@ -655,6 +673,7 @@ mod tests {
         assert!(
             activity
                 .update(
+                    false,
                     false,
                     ConversationState::Listening,
                     start + Duration::from_millis(300)
@@ -667,10 +686,11 @@ mod tests {
     fn incomplete_turn_waits_for_more_speech_or_the_safety_timeout() {
         let start = Instant::now();
         let mut activity = VoiceActivity::default();
-        activity.update(true, ConversationState::Listening, start);
+        activity.update(true, true, ConversationState::Listening, start);
         assert!(
             activity
                 .update(
+                    false,
                     false,
                     ConversationState::Listening,
                     start + ENDPOINT_SILENCE
@@ -678,6 +698,7 @@ mod tests {
                 .endpoint_check
         );
         let waiting = activity.update(
+            false,
             false,
             ConversationState::Listening,
             start + Duration::from_millis(600),
@@ -687,6 +708,7 @@ mod tests {
         assert!(
             activity
                 .update(
+                    false,
                     false,
                     ConversationState::Listening,
                     start + MAX_ENDPOINT_SILENCE
@@ -701,12 +723,13 @@ mod tests {
         let mut activity = VoiceActivity::default();
         assert!(
             activity
-                .update(true, ConversationState::Speaking, start)
+                .update(false, true, ConversationState::Speaking, start)
                 .interrupt
         );
         assert!(
             !activity
                 .update(
+                    true,
                     true,
                     ConversationState::Speaking,
                     start + Duration::from_millis(10)
