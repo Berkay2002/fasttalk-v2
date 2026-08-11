@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-11",
+  "license": "apache-2.0",
+  "candidates": [
+    {
+      "id": "official-qwen35-q5",
+      "role": "baseline",
+      "repository": "unsloth/Qwen3.5-9B-GGUF",
+      "revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
+      "baseModel": "Qwen/Qwen3.5-9B",
+      "artifact": "Qwen3.5-9B-Q5_K_M.gguf",
+      "quantization": "Q5_K_M",
+      "bytes": 6577841376,
+      "sha256": "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c",
+      "modelCard": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/tree/3885219b6810b007914f3a7950a8d1b469d598a5"
+    },
+    {
+      "id": "hauhau-q6",
+      "role": "candidate",
+      "repository": "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive",
+      "revision": "0a41c68809d375475f954be12ba7c40efa56c2a9",
+      "baseModel": "Qwen/Qwen3.5-9B",
+      "artifact": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf",
+      "quantization": "Q6_K",
+      "bytes": 7359259008,
+      "sha256": "c0ba7beb68fd3fe47891bd549486d38dcf62d00817296ea314ad37017f5a4986",
+      "modelCard": "https://huggingface.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive/tree/0a41c68809d375475f954be12ba7c40efa56c2a9",
+      "provenanceNote": "The card's refusal and capability claims are author-reported."
+    },
+    {
+      "id": "huihui-q5",
+      "role": "candidate",
+      "repository": "mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF",
+      "revision": "9f646d7eda193ddf2348134f3bff3d49eed7a2c6",
+      "baseModel": "huihui-ai/Huihui-Qwen3.5-9B-abliterated",
+      "artifact": "Huihui-Qwen3.5-9B-abliterated.Q5_K_M.gguf",
+      "quantization": "Q5_K_M",
+      "bytes": 6522004864,
+      "sha256": "946072b16f5d672e60357410f900888f6522b3ae49f241b5bf2142cb89637fb6",
+      "modelCard": "https://huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/tree/9f646d7eda193ddf2348134f3bff3d49eed7a2c6",
+      "provenanceNote": "The source card calls the abliteration a crude proof of concept."
+    },
+    {
+      "id": "heretic-v2-q5",
+      "role": "candidate",
+      "repository": "filvyb/Qwen3.5-9B-heretic-v2-GGUF",
+      "revision": "1ea5060b658fdb7384cda09915d8432bb796165a",
+      "baseModel": "trohrbaugh/Qwen3.5-9B-heretic-v2",
+      "artifact": "Qwen3.5-9B-heretic-v2-Q5_K_M.gguf",
+      "quantization": "Q5_K_M",
+      "bytes": 6522004416,
+      "sha256": "f50b1fab017365d0b782e9d6a878a8953eb35d84929f3c081eb81696fca7da4d",
+      "modelCard": "https://huggingface.co/filvyb/Qwen3.5-9B-heretic-v2-GGUF/tree/1ea5060b658fdb7384cda09915d8432bb796165a",
+      "provenanceNote": "The source repository metadata and card text conflict on whether the source is the base or post-trained Qwen model."
+    }
+  ]
+}

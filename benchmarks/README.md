@@ -7,6 +7,10 @@ spikes are useful evidence too.
 The final staged comparison is
 [2026-08-11-rtx3090-matrix](2026-08-11-rtx3090-matrix/README.md). Its control is
 [2026-08-11-rtx3090-post-audit](2026-08-11-rtx3090-post-audit/README.md).
+The follow-up
+[Qwen3.5 refusal-behavior comparison](2026-08-11-qwen35-decensor/README.md)
+tests three less-censored variants against the selected official post-trained
+baseline without changing the default profile.
 The original [2026-08-11-rtx3090](2026-08-11-rtx3090/README.md) archive is
 retained as superseded experiment history.
 Its `summary.csv` is intended for plotting and comparison. Its `evidence`
