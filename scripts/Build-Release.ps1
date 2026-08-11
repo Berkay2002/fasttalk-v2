@@ -96,6 +96,10 @@ if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) {
     $env:Path = "$($node.FullName);$env:Path"
 }
 Assert-Command "npm"
+$tauriCli = Join-Path $appRoot "node_modules\.bin\tauri.cmd"
+if (-not (Test-Path -LiteralPath $tauriCli -PathType Leaf)) {
+    throw "Project-local Tauri CLI is unavailable. Run npm install in app first."
+}
 
 if (-not $SkipNativeBuild) {
     & (Join-Path $PSScriptRoot "Build-NativeRuntimes.ps1")
@@ -144,7 +148,7 @@ if ($LASTEXITCODE -ne 0) { throw "Workspace tests failed ($LASTEXITCODE)" }
 
 Push-Location $appRoot
 try {
-    npm run tauri -- build --bundles nsis --config $tauriConfig
+    & $tauriCli build --bundles nsis --config $tauriConfig
     if ($LASTEXITCODE -ne 0) { throw "Tauri NSIS build failed ($LASTEXITCODE)" }
 } finally {
     Pop-Location
