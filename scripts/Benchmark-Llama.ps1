@@ -4,6 +4,8 @@ param(
     [string]$Profile = "qwen3.6-27b-q4-k-m-16k-non-thinking",
     [string]$Output = "artifacts/feasibility/llama-benchmark.json",
     [int]$Port = 18080,
+    [int]$ContextSize = 16384,
+    [int]$Parallel = 4,
     [int]$WarmSamples = 20,
     [int]$ThroughputSamples = 5
 )
@@ -21,8 +23,8 @@ $env:Path = "$(Join-Path $workspace 'runtime/cuda-13.3');$env:Path"
 
 $arguments = @(
     "--model", $modelPath,
-    "--ctx-size", "16384",
-    "--parallel", "4",
+    "--ctx-size", $ContextSize.ToString(),
+    "--parallel", $Parallel.ToString(),
     "--gpu-layers", "all",
     "--flash-attn", "on",
     "--reasoning", "off",
@@ -134,6 +136,9 @@ try {
     $report = [ordered]@{
         schemaVersion = 1
         profile = $Profile
+        model = [IO.Path]::GetRelativePath($workspace, $modelPath).Replace('\', '/')
+        contextSize = $ContextSize
+        parallel = $Parallel
         warmLlmFirstTokenMs = @($ttft)
         generationTokensPerSecond = @($throughput)
         warmedGpuMemoryMiB = $memoryUsed

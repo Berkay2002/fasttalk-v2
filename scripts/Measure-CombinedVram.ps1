@@ -3,6 +3,12 @@ param(
     [string]$LlamaModel = ".cache/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf",
     [string]$Profile = "qwen3.6-27b-q4-k-m-16k-non-thinking-with-speech",
     [string]$Output = "artifacts/feasibility/combined-vram.json",
+    [int]$ContextSize = 16384,
+    [int]$Parallel = 4,
+    [string]$AsrModel = ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+    [string]$TtsModel = ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
+    [string]$CodecModel = ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+    [string]$TokenizerDirectory = ".cache/models/magpie-tts/extracted",
     [int]$LlamaPort = 18080,
     [int]$SpeechPort = 18081,
     [switch]$AsrOnly
@@ -15,6 +21,7 @@ $outputPath = Join-Path $workspace $Output
 $outputDir = Split-Path -Parent $outputPath
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $llamaModelPath = (Resolve-Path (Join-Path $workspace $LlamaModel)).Path
+$asrModelPath = (Resolve-Path (Join-Path $workspace $AsrModel)).Path
 $env:Path = "$(Join-Path $workspace 'runtime/cuda-13.3');$env:Path"
 
 function Get-GpuMemoryMiB {
@@ -44,7 +51,7 @@ $speechLog = Join-Path $artifactDir "combined-speech.stderr.log"
 $llama = Start-Process -FilePath (Join-Path $workspace "runtime/llm/llama-server.exe") `
     -ArgumentList @(
         "--model", $llamaModelPath,
-        "--ctx-size", "16384", "--parallel", "4",
+        "--ctx-size", $ContextSize.ToString(), "--parallel", $Parallel.ToString(),
         "--gpu-layers", "all", "--flash-attn", "on",
         "--reasoning", "off", "--host", "127.0.0.1", "--port", $LlamaPort.ToString(),
         "--no-webui"
@@ -65,14 +72,14 @@ try {
 
     $speechArguments = @(
         "serve",
-        "--asr-model", (Join-Path $workspace ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
+        "--asr-model", $asrModelPath,
         "--host", "127.0.0.1", "--port", $SpeechPort.ToString(), "--no-ui"
     )
     if (-not $AsrOnly) {
         $speechArguments += @(
-            "--tts-model", (Join-Path $workspace ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
-            "--codec-model", (Join-Path $workspace ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
-            "--tokenizer-dir", (Join-Path $workspace ".cache/models/magpie-tts/extracted")
+            "--tts-model", (Resolve-Path (Join-Path $workspace $TtsModel)).Path,
+            "--codec-model", (Resolve-Path (Join-Path $workspace $CodecModel)).Path,
+            "--tokenizer-dir", (Resolve-Path (Join-Path $workspace $TokenizerDirectory)).Path
         )
     }
     $speech = Start-Process -FilePath (Join-Path $workspace "runtime/asr/nemo-speech.exe") `
@@ -85,6 +92,9 @@ try {
         schemaVersion = 1
         profile = $Profile
         llamaModel = [IO.Path]::GetRelativePath($workspace, $llamaModelPath).Replace('\', '/')
+        contextSize = $ContextSize
+        parallel = $Parallel
+        asrModel = [IO.Path]::GetRelativePath($workspace, $asrModelPath).Replace('\', '/')
         speechProfile = if ($AsrOnly) { "asr-only" } else { "asr-and-magpie" }
         baselineGpuMemoryMiB = $baseline
         warmedGpuMemoryMiB = $warmed

@@ -1,6 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$Output = "artifacts/feasibility/magpie-benchmark.json",
+    [string]$Profile = "magpie-v2602-f16-nanocodec-f16",
+    [string]$TtsModel = ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf",
+    [string]$CodecModel = ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
+    [string]$TokenizerDirectory = ".cache/models/magpie-tts/extracted",
     [int]$Port = 18081,
     [int]$Samples = 20
 )
@@ -15,9 +19,9 @@ $stderr = Join-Path $artifactDir "magpie-benchmark.stderr.log"
 $process = Start-Process -FilePath (Join-Path $workspace "runtime/asr/nemo-speech.exe") `
     -ArgumentList @(
         "serve",
-        "--tts-model", (Join-Path $workspace ".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
-        "--codec-model", (Join-Path $workspace ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
-        "--tokenizer-dir", (Join-Path $workspace ".cache/models/magpie-tts/extracted"),
+        "--tts-model", (Resolve-Path (Join-Path $workspace $TtsModel)).Path,
+        "--codec-model", (Resolve-Path (Join-Path $workspace $CodecModel)).Path,
+        "--tokenizer-dir", (Resolve-Path (Join-Path $workspace $TokenizerDirectory)).Path,
         "--host", "127.0.0.1", "--port", $Port.ToString(), "--no-ui"
     ) -PassThru -WindowStyle Hidden -RedirectStandardError $stderr `
     -RedirectStandardOutput (Join-Path $artifactDir "magpie-benchmark.stdout.log")
@@ -108,7 +112,9 @@ try {
 
     $report = [ordered]@{
         schemaVersion = 1
-        profile = "magpie-v2602-f16-nanocodec-f16"
+        profile = $Profile
+        ttsModel = $TtsModel.Replace('\', '/')
+        codecModel = $CodecModel.Replace('\', '/')
         firstAudioMs = @($measurements | ForEach-Object firstAudioMs)
         realTimeFactor = @($measurements | ForEach-Object realTimeFactor)
         responseCancellationMs = @($cancellations | ForEach-Object cancelMs)
