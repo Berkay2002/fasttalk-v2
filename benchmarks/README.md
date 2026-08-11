@@ -4,7 +4,8 @@ This directory keeps the measured engineering record for FastTalk. It is
 separate from the release gate because failed candidates and intermediate
 spikes are useful evidence too.
 
-The current control is
+The final staged comparison is
+[2026-08-11-rtx3090-matrix](2026-08-11-rtx3090-matrix/README.md). Its control is
 [2026-08-11-rtx3090-post-audit](2026-08-11-rtx3090-post-audit/README.md).
 The original [2026-08-11-rtx3090](2026-08-11-rtx3090/README.md) archive is
 retained as superseded experiment history.
@@ -23,5 +24,6 @@ from the ignored `artifacts` workspace.
 - Report both total GPU usage and worker-attributable usage when available.
 - Keep large models, native binaries, WAV output, and verbose logs out of git.
 
-Run `scripts/Snapshot-BenchmarkEvidence.ps1` after a benchmark session to
-refresh the portable evidence copies and their hashes.
+Run `scripts/Snapshot-BenchmarkEvidence.ps1` for the control archive or
+`scripts/Snapshot-MatrixEvidence.ps1` for the cross-profile archive to refresh
+the portable evidence copies and hashes.

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "magpieProfile": "magpie-v2602-f16-nanocodec-f16",
+  "kokoroProfile": "kokoro-82m-int8-cpu",
+  "assignments": [
+    {
+      "id": "numbers-names",
+      "magpie": "A",
+      "kokoro": "B"
+    },
+    {
+      "id": "prosody",
+      "magpie": "B",
+      "kokoro": "A"
+    },
+    {
+      "id": "technical",
+      "magpie": "A",
+      "kokoro": "B"
+    }
+  ]
+}

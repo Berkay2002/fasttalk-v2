@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "profile": "nemotron-3.5-asr-streaming-0.6b-q8",
+  "repetitions": 20,
+  "transcriptMismatches": 0,
+  "streamingRealTimeFactorX": 35.0679,
+  "configuredChunkMs": 160.0,
+  "computeMsPerChunk": 4.5626,
+  "partialUpdateUpperBoundMs": 164.5626,
+  "partialUpdateMethod": "Configured 160 ms streaming chunk plus measured average compute per chunk. This is a derived upper bound, not a WebSocket timestamp."
+}

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen3-14b-q5-k-m-32k-p1",
+  "model": ".cache/models/qwen3-14b-q5/Qwen3-14B-Q5_K_M.gguf",
+  "contextSize": 32768,
+  "parallel": 1,
+  "effectiveContextPerSlot": 32768.0,
+  "warmLlmFirstTokenMs": [
+    41.629,
+    62.116,
+    62.01,
+    63.107,
+    66.407,
+    61.854,
+    59.888,
+    64.885,
+    68.878,
+    65.452,
+    64.485,
+    63.398,
+    68.917,
+    60.642,
+    68.47,
+    66.994,
+    66.516,
+    67.15,
+    66.545,
+    66.286
+  ],
+  "generationTokensPerSecond": [
+    30.898,
+    30.571,
+    30.042,
+    29.857,
+    29.559
+  ],
+  "qualityCases": [
+    {
+      "id": "exact-instruction",
+      "response": "FASTTALK_OK",
+      "expected": "FASTTALK_OK",
+      "method": "exact",
+      "pass": true
+    },
+    {
+      "id": "conversation-recall",
+      "response": "amber-17",
+      "expected": "amber-17",
+      "method": "exact-case-insensitive",
+      "pass": true
+    },
+    {
+      "id": "format-constraint",
+      "response": "red,blue,green",
+      "expected": "^[a-z]+,[a-z]+,[a-z]+$",
+      "method": "regex",
+      "pass": true
+    },
+    {
+      "id": "multi-step-arithmetic",
+      "response": "73 - 28 + 14 - 9 = **5",
+      "expected": "50",
+      "method": "exact",
+      "pass": false
+    },
+    {
+      "id": "latest-conversation-state",
+      "response": "west-7",
+      "expected": "west-7",
+      "method": "exact-case-insensitive",
+      "pass": true
+    },
+    {
+      "id": "json-contract",
+      "response": "{\"status\": \"ready\", \"count\": 3}",
+      "expected": "{\"status\":\"ready\",\"count\":3}",
+      "method": "json-contract",
+      "pass": true
+    },
+    {
+      "id": "long-context-recall",
+      "response": "cobalt-42",
+      "expected": "cobalt-42",
+      "method": "exact-case-insensitive",
+      "pass": true
+    }
+  ],
+  "qualityPassCount": 6,
+  "qualityCaseCount": 7,
+  "warmedGpuMemoryMiB": 18160.0
+}

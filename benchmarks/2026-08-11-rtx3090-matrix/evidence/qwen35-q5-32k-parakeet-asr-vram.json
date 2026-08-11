@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen35-q5-32k-parakeet-asr",
+  "llamaModel": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "contextSize": 32768,
+  "parallel": 1,
+  "effectiveContextPerSlot": 32768.0,
+  "asrModel": ".cache/models/parakeet-ctc/parakeet-ctc-1.1b.q8_0.gguf",
+  "speechProfile": "asr-only",
+  "baselineGpuMemoryMiB": 3093.0,
+  "warmedGpuMemoryMiB": 11947.0,
+  "combinedWorkerGpuMemoryMiB": 8854.0,
+  "speechReady": {
+    "capabilities": [
+      "asr"
+    ],
+    "device": "auto",
+    "ready": true
+  }
+}

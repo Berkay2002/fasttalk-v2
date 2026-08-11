@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen3.5-9b-q5-k-m-32k-p1",
+  "model": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "contextSize": 32768,
+  "parallel": 1,
+  "effectiveContextPerSlot": 32768.0,
+  "warmLlmFirstTokenMs": [
+    49.496,
+    42.469,
+    57.103,
+    53.874,
+    56.199,
+    58.957,
+    55.949,
+    57.641,
+    57.692,
+    60.899,
+    54.594,
+    57.592,
+    54.517,
+    57.09,
+    58.565,
+    56.932,
+    55.925,
+    57.782,
+    56.835,
+    55.032
+  ],
+  "generationTokensPerSecond": [
+    50.107,
+    49.972,
+    50.509,
+    49.277,
+    49.23
+  ],
+  "qualityCases": [
+    {
+      "id": "exact-instruction",
+      "response": "FASTTALK_OK",
+      "expected": "FASTTALK_OK",
+      "method": "exact",
+      "pass": true
+    },
+    {
+      "id": "conversation-recall",
+      "response": "amber-17",
+      "expected": "amber-17",
+      "method": "exact-case-insensitive",
+      "pass": true
+    },
+    {
+      "id": "format-constraint",
+      "response": "red,blue,green",
+      "expected": "^[a-z]+,[a-z]+,[a-z]+$",
+      "method": "regex",
+      "pass": true
+    },
+    {
+      "id": "multi-step-arithmetic",
+      "response": "50",
+      "expected": "50",
+      "method": "exact",
+      "pass": true
+    },
+    {
+      "id": "latest-conversation-state",
+      "response": "west-7",
+      "expected": "west-7",
+      "method": "exact-case-insensitive",
+      "pass": true
+    },
+    {
+      "id": "json-contract",
+      "response": "{\"status\":\"ready\",\"count\":3}",
+      "expected": "{\"status\":\"ready\",\"count\":3}",
+      "method": "json-contract",
+      "pass": true
+    },
+    {
+      "id": "long-context-recall",
+      "response": "cobalt-42",
+      "expected": "cobalt-42",
+      "method": "exact-case-insensitive",
+      "pass": true
+    }
+  ],
+  "qualityPassCount": 7,
+  "qualityCaseCount": 7,
+  "warmedGpuMemoryMiB": 10165.0
+}

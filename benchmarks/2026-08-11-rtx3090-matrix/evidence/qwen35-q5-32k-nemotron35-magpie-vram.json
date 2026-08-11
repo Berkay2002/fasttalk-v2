@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen35-q5-32k-nemotron35-magpie",
+  "llamaModel": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "contextSize": 32768,
+  "parallel": 4,
+  "asrModel": ".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+  "speechProfile": "asr-and-magpie",
+  "baselineGpuMemoryMiB": 3076.0,
+  "warmedGpuMemoryMiB": 12453.0,
+  "combinedWorkerGpuMemoryMiB": 9377.0,
+  "speechReady": {
+    "capabilities": [
+      "asr",
+      "tts"
+    ],
+    "device": "auto",
+    "ready": true
+  }
+}

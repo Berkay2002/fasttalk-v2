@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen35-q5-32k-parakeet-magpie",
+  "llamaModel": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "contextSize": 32768,
+  "parallel": 4,
+  "asrModel": ".cache/models/parakeet-ctc/parakeet-ctc-1.1b.q8_0.gguf",
+  "speechProfile": "asr-and-magpie",
+  "baselineGpuMemoryMiB": 3083.0,
+  "warmedGpuMemoryMiB": 12991.0,
+  "combinedWorkerGpuMemoryMiB": 9908.0,
+  "speechReady": {
+    "capabilities": [
+      "asr",
+      "tts"
+    ],
+    "device": "auto",
+    "ready": true
+  }
+}

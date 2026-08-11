@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "prerecordedAudio": "C:\\Users\\berka\\.me\\projects\\fasttalk-v2\\app\\src-tauri\\../..\\.cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav",
+  "turns": 1,
+  "runtimeProfile": "rtx3090-qwen35-q5-parakeet-32k",
+  "ttsBackend": "magpie",
+  "transcripts": [
+    "and so my fellow americans ask not what your country can do for you ask what you can do for your country"
+  ],
+  "firstClauses": [
+    "\"I heard the transcript clearly."
+  ],
+  "synthesizedClauseCounts": [
+    3
+  ],
+  "endOfSpeechToFirstAudioMs": [
+    505.969
+  ],
+  "warmLlmFirstTokenMs": [
+    119.404
+  ],
+  "asrPartialUpdateMs": [
+    46.242,
+    41.002,
+    42.733,
+    32.683,
+    36.179,
+    36.537,
+    35.295,
+    26.241,
+    23.03,
+    23.553,
+    20.773,
+    22.378,
+    20.311,
+    23.335,
+    15.741,
+    23.335,
+    23.67,
+    25.113,
+    24.105
+  ],
+  "bargeInToSilenceMs": [
+    108.141
+  ],
+  "bargeInOnsetToVadMs": [
+    104.612
+  ],
+  "bargeInCancelToCallbackMs": [
+    3.529
+  ],
+  "bargeInMeasurementScope": "prerecorded speech onset through production AEC and the fast energy interruption detector, cancellation dispatch, and WASAPI output callback acknowledgement; Silero remains the speech-state and endpointing detector",
+  "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+  "warmedGpuMemoryMib": [
+    12883.0
+  ],
+  "activeStreamCancellation": {
+    "llmAfterFirstDeltaMs": 0.083,
+    "ttsAfterFirstPcmMs": 0.046,
+    "scope": "client delivery cancellation after the first live LLM delta and first live TTS PCM frame; Magpie drains the already-started native clause response and workers must remain ready"
+  },
+  "soak": {
+    "requestedMinutes": 30.0,
+    "durationMinutes": 30.173,
+    "completedTurns": 134,
+    "turnFailureCount": 0,
+    "oomCount": 0,
+    "workerFailureCount": 0
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "profile": "nemotron-speech-streaming-en-0.6b-q8",
+  "model": ".cache/models/nemotron-speech-en/nemotron-speech-streaming-en-0.6b.q8_0.gguf",
+  "mode": "stream",
+  "repetitions": 20,
+  "transcriptMismatches": 0,
+  "streamingRealTimeFactorX": 31.9565,
+  "configuredChunkMs": 160.0,
+  "computeMsPerChunk": 5.0068,
+  "partialUpdateUpperBoundMs": 165.0068,
+  "partialUpdateMethod": "Configured 160 ms chunk plus measured average compute per chunk. This is a derived upper bound, not a WebSocket timestamp."
+}

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "profile": "qwen3.5-9b-q5-k-m-16k",
+  "model": ".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf",
+  "contextSize": 16384,
+  "parallel": 4,
+  "warmLlmFirstTokenMs": [
+    50.312,
+    45.618,
+    57.26,
+    60.198,
+    57.87,
+    57.694,
+    58.99,
+    57.827,
+    58.338,
+    57.633,
+    58.525,
+    58.371,
+    59.646,
+    54.855,
+    55.274,
+    57.414,
+    58.274,
+    58.735,
+    59.424,
+    57.612
+  ],
+  "generationTokensPerSecond": [
+    50.539,
+    49.947,
+    49.788,
+    49.359,
+    49.501
+  ],
+  "qualityCases": [
+    {
+      "id": "exact-instruction",
+      "response": "FASTTALK_OK",
+      "expected": "FASTTALK_OK",
+      "method": "exact",
+      "pass": true
+    },
+    {
+      "id": "conversation-recall",
+      "response": "amber-17",
+      "expected": "amber-17",
+      "method": "exact-case-insensitive",
+      "pass": true
+    },
+    {
+      "id": "format-constraint",
+      "response": "red,blue,green",
+      "expected": "^[a-z]+,[a-z]+,[a-z]+$",
+      "method": "regex",
+      "pass": true
+    }
+  ],
+  "qualityPassCount": 3,
+  "qualityCaseCount": 3,
+  "warmedGpuMemoryMiB": 9755.0
+}

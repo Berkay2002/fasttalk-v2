@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "profile": "parakeet-ctc-1.1b-q8",
+  "model": ".cache/models/parakeet-ctc/parakeet-ctc-1.1b.q8_0.gguf",
+  "mode": "stream",
+  "repetitions": 20,
+  "transcriptMismatches": 0,
+  "streamingRealTimeFactorX": 12.03,
+  "configuredChunkMs": 160.0,
+  "computeMsPerChunk": 13.3001,
+  "partialUpdateUpperBoundMs": 173.3001,
+  "partialUpdateMethod": "Configured 160 ms chunk plus measured average compute per chunk. This is a derived upper bound, not a WebSocket timestamp."
+}

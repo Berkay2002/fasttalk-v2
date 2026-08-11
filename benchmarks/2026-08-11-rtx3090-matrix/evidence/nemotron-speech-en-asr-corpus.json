@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "profile": "nemotron-speech-streaming-en-0.6b-q8",
+  "model": ".cache/models/nemotron-speech-en/nemotron-speech-streaming-en-0.6b.q8_0.gguf",
+  "mode": "stream",
+  "corpus": "six prerecorded synthetic acoustic fixtures",
+  "fixtureCount": 6,
+  "referenceWords": 59,
+  "wordErrors": 4,
+  "wordErrorRate": 0.0678,
+  "cases": [
+    {
+      "fixture": "quiet-speech.wav",
+      "expected": "Could you please lower the lights in this room",
+      "actual": "Could you please lower the lights in this room?",
+      "wordErrors": 0,
+      "referenceWords": 9,
+      "wordErrorRate": 0.0
+    },
+    {
+      "fixture": "hesitation.wav",
+      "expected": "Um I think we should wait for a moment before deciding",
+      "actual": "Zomb I think we should wait for a moment before deciding.",
+      "wordErrors": 1,
+      "referenceWords": 11,
+      "wordErrorRate": 0.0909
+    },
+    {
+      "fixture": "short-acknowledgement.wav",
+      "expected": "Yes",
+      "actual": "Yes",
+      "wordErrors": 0,
+      "referenceWords": 1,
+      "wordErrorRate": 0.0
+    },
+    {
+      "fixture": "long-question.wav",
+      "expected": "Could you explain how a local voice assistant keeps the microphone transcription language model and speech synthesis private while still responding quickly",
+      "actual": "Could you explain how a local voice assistant keeps the microphone, transcription, language model, and speech synthesis private while still responding quickly?",
+      "wordErrors": 0,
+      "referenceWords": 22,
+      "wordErrorRate": 0.0
+    },
+    {
+      "fixture": "background-noise.wav",
+      "expected": "Please tell me whether the train will arrive before noon",
+      "actual": "Please tell me whether the train will arrive before noon.",
+      "wordErrors": 0,
+      "referenceWords": 10,
+      "wordErrorRate": 0.0
+    },
+    {
+      "fixture": "speaker-playback.wav",
+      "expected": "Can you hear my question clearly",
+      "actual": "And so my hear my question clearly.",
+      "wordErrors": 3,
+      "referenceWords": 6,
+      "wordErrorRate": 0.5
+    }
+  ],
+  "limitation": "This small deterministic regression corpus is useful for cross-profile comparison, but it is not a substitute for a public multi-speaker WER benchmark."
+}

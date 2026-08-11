@@ -1,0 +1,50 @@
+[
+  {
+    "fixture": "quiet-speech.wav",
+    "transcript": "could you please lower the lights in this room",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 2430.605,
+    "asrPartialMaximumMs": 46.452
+  },
+  {
+    "fixture": "hesitation.wav",
+    "transcript": "someum i think we should wait for a moment before deciding",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 1042.38,
+    "asrPartialMaximumMs": 45.629
+  },
+  {
+    "fixture": "short-acknowledgement.wav",
+    "transcript": "yes",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 1015.024,
+    "asrPartialMaximumMs": null
+  },
+  {
+    "fixture": "long-question.wav",
+    "transcript": "could you explain how a local voice assistant keeps the microphone transcription language model and speech synthesisvate while still responding quickly",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 1074.487,
+    "asrPartialMaximumMs": 42.176
+  },
+  {
+    "fixture": "background-noise.wav",
+    "transcript": "please tell me whether the train will arrive before noon",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 1001.329,
+    "asrPartialMaximumMs": 43.46
+  },
+  {
+    "fixture": "speaker-playback.wav",
+    "transcript": "hear my question clearly",
+    "synthesizedClauseCount": 3,
+    "capturePreprocessingScope": "prerecorded capture and paired playback reference are upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection",
+    "endOfSpeechToFirstAudioMs": 1025.008,
+    "asrPartialMaximumMs": null
+  }
+]

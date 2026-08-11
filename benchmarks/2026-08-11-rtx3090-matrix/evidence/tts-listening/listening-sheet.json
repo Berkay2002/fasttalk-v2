@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "instructions": "Listen without opening answer-key.json. Record the preferred sample and any pronunciation defects.",
+  "cases": [
+    {
+      "id": "numbers-names",
+      "prompt": "At 7:45 p.m., Doctor Nguyen bought three GPUs for 1,299 dollars each.",
+      "sampleA": "numbers-names-A.wav",
+      "sampleB": "numbers-names-B.wav",
+      "preferred": null,
+      "pronunciationNotes": null
+    },
+    {
+      "id": "prosody",
+      "prompt": "Wait... did you really say zero point zero five? I thought you said five.",
+      "sampleA": "prosody-A.wav",
+      "sampleB": "prosody-B.wav",
+      "preferred": null,
+      "pronunciationNotes": null
+    },
+    {
+      "id": "technical",
+      "prompt": "FastTalk keeps transcription, language generation, and speech synthesis on this computer while responding one clause at a time.",
+      "sampleA": "technical-A.wav",
+      "sampleB": "technical-B.wav",
+      "preferred": null,
+      "pronunciationNotes": null
+    }
+  ]
+}

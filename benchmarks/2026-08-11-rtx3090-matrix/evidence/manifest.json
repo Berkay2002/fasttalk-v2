@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "runId": "2026-08-11-rtx3090-matrix",
+  "sourceCommit": "63ff9376317a9974a9de4fd6cf0c8cd1b2389991",
+  "files": [
+    {
+      "file": "kokoro-cpu.json",
+      "bytes": 275,
+      "sha256": "17ce55c63bba436aea3b677d0e452185c58ddca49aec55b3ac53347d6a27a55d"
+    },
+    {
+      "file": "magpie-incremental-transport.json",
+      "bytes": 9760,
+      "sha256": "c09e51ca79e9f5e1e3047702576570289e104e553c7df02af7cfd5158f01679e"
+    },
+    {
+      "file": "magpie-streaming.json",
+      "bytes": 276,
+      "sha256": "9a9288ffdb3af6d94cfa54a83872e40bd5bdf8eba48e298c4e4ec68f0922108c"
+    },
+    {
+      "file": "nemotron-speech-en-asr-corpus.json",
+      "bytes": 2329,
+      "sha256": "a2280ce3690cd2be8b5cff305d0bfde4751e9b739cd57d52104561a5a174a6eb"
+    },
+    {
+      "file": "nemotron-speech-en-asr-performance.json",
+      "bytes": 544,
+      "sha256": "2c0fdd99b306f751be3f4c9d617a778d05f1038a05efcdb035c3bc869aef0211"
+    },
+    {
+      "file": "nemotron35-asr-corpus.json",
+      "bytes": 2316,
+      "sha256": "0cac8baa1c6b3f738e62fa6209a082e8db23fdc6c86e36cbc86f6ae08c08d408"
+    },
+    {
+      "file": "nemotron35-asr-performance.json",
+      "bytes": 439,
+      "sha256": "696e37ae08338c07ecdd172e8a57bfdacd4e5cf10baf4f6ba12afad325613c44"
+    },
+    {
+      "file": "parakeet-asr-corpus.json",
+      "bytes": 2283,
+      "sha256": "4b3357913a845b6a298f33774b403fdb2034edc0b12e0ca11b0a983cb104ef2f"
+    },
+    {
+      "file": "parakeet-asr-performance.json",
+      "bytes": 505,
+      "sha256": "63a285cac932584af425a2450bd9351acffaefae1bf693662d21a17fe981d7a7"
+    },
+    {
+      "file": "qwen3-14b-q5-16k-parakeet-magpie-vram.json",
+      "bytes": 538,
+      "sha256": "0c211b5646878f0732a9a39d026cd04cba4c894b632eb5e3a1a5c17b688c603c"
+    },
+    {
+      "file": "qwen3-14b-q5-32k-p1.json",
+      "bytes": 1979,
+      "sha256": "baa819459751a6179930b86950cf7638038ac727e4f209a15b7d80d145fce5e8"
+    },
+    {
+      "file": "qwen3-14b-q5-32k-parakeet-magpie-vram.json",
+      "bytes": 538,
+      "sha256": "2b580140cb7ac32ad2963719e512d6778edee1f78f34bf8a5022dafb8fe34cd3"
+    },
+    {
+      "file": "qwen35-q5-16k-p4.json",
+      "bytes": 1194,
+      "sha256": "b3e0cd7a6503377edeeff9444a3aa80b348704284319e6d16f9c54e810fa7236"
+    },
+    {
+      "file": "qwen35-q5-32k-nemotron35-magpie-vram.json",
+      "bytes": 549,
+      "sha256": "ba292c191d0f38aaab9775fd30a8819d3323d8dbfb9bdee642970e16dc3c9eba"
+    },
+    {
+      "file": "qwen35-q5-32k-p1.json",
+      "bytes": 1956,
+      "sha256": "f96a9d0eebb1c9d9f42d1a03b500457a8dd2b76a091f469dab8ed0dc8fa411ff"
+    },
+    {
+      "file": "qwen35-q5-32k-parakeet-asr-vram.json",
+      "bytes": 549,
+      "sha256": "781fbe4d52d6f7ee7abc1eadb611117a98e85ad9025dc22bbb024f9ea1d39866"
+    },
+    {
+      "file": "qwen35-q5-32k-parakeet-magpie-vram.json",
+      "bytes": 533,
+      "sha256": "a90cb0ef2c240bfb098232c69174dfa335546e5c2ab38c5651539bd42bbc09b9"
+    },
+    {
+      "file": "qwen35-q8-32k-p1.json",
+      "bytes": 1953,
+      "sha256": "225ec3d7dfe56ff41101b1acf2c8d73d3e88c8935a6a715cfb56d0d9363a353b"
+    },
+    {
+      "file": "qwen36-q4-16k.json",
+      "bytes": 530,
+      "sha256": "ba57f45cd70c5f798771d1e46073e198e1bc414869fb587b0c9f1d13a30e5a24"
+    },
+    {
+      "file": "selected-acoustic-scenarios.json",
+      "bytes": 2478,
+      "sha256": "23ccae0898656297ca44605a24012dc32f8a528a422d60038c2cd946aae1b3f5"
+    },
+    {
+      "file": "selected-conversation-20-turn.json",
+      "bytes": 10626,
+      "sha256": "c636016a988888359b8dafa6c68156de43c295ee76f22a6149863688672c0f79"
+    },
+    {
+      "file": "selected-conversation-30-minute-soak.json",
+      "bytes": 1932,
+      "sha256": "d5da69ec4524e3635e9680a2ece353370f02c1342d0360db0b8b1d406f852d9f"
+    },
+    {
+      "file": "tts-listening/answer-key.json",
+      "bytes": 404,
+      "sha256": "1e24fa4801183087b3732ff7eca4edbacd646e02c3dd7368493e23df27cdee80"
+    },
+    {
+      "file": "tts-listening/listening-sheet.json",
+      "bytes": 1031,
+      "sha256": "7f4170ec1c91befdf7c0a1bb11eb923105ac5c8b866feb05ca89f82390c5455c"
+    },
+    {
+      "file": "tts-listening/numbers-names-A.wav",
+      "bytes": 280620,
+      "sha256": "3daa7e94827d8afb56193229a3016b5ac5bbe8f24d7feb57f6c9a2a29bbd8e6f"
+    },
+    {
+      "file": "tts-listening/numbers-names-B.wav",
+      "bytes": 322760,
+      "sha256": "7749655647725a33b6dae4955d8cdb59bc9af3838a82849dcf18330e763e550e"
+    },
+    {
+      "file": "tts-listening/prosody-A.wav",
+      "bytes": 280376,
+      "sha256": "bc6f41aa8bb412eade0223e7fa815407ad727387e5cb3cdb7984c7fd38821432"
+    },
+    {
+      "file": "tts-listening/prosody-B.wav",
+      "bytes": 260140,
+      "sha256": "e83f3736bbd05dd33902e35be09ed5c75c362545ccd794fd4b7319f46304aad0"
+    },
+    {
+      "file": "tts-listening/technical-A.wav",
+      "bytes": 466988,
+      "sha256": "88177b1c9fec77041a90282f76be274fc18a5df6bd26a66704eb4d51d71c5b81"
+    },
+    {
+      "file": "tts-listening/technical-B.wav",
+      "bytes": 325106,
+      "sha256": "ed7fbc7f02b07ed2827ebd5650a4cc2ec52579ebc52d96225bcb89478fd1a6ff"
+    }
+  ]
+}
