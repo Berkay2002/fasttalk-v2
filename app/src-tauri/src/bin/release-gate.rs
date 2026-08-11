@@ -30,6 +30,7 @@ struct Args {
     turns: usize,
     soak_minutes: f64,
     audio: Option<PathBuf>,
+    reference: Option<PathBuf>,
     output: PathBuf,
     skip_audio: bool,
 }
@@ -39,6 +40,7 @@ impl Args {
         let mut turns: usize = 20;
         let mut soak_minutes: f64 = 0.0;
         let mut audio = None;
+        let mut reference = None;
         let mut output = PathBuf::from("artifacts/release/conversation-benchmark.json");
         let mut skip_audio = false;
         let mut arguments = env::args().skip(1);
@@ -55,6 +57,9 @@ impl Args {
                         .map_err(|_| "--soak-minutes must be a number".to_owned())?;
                 }
                 "--audio" => audio = Some(PathBuf::from(value(&mut arguments, "--audio")?)),
+                "--reference" => {
+                    reference = Some(PathBuf::from(value(&mut arguments, "--reference")?));
+                }
                 "--output" => output = PathBuf::from(value(&mut arguments, "--output")?),
                 "--skip-audio" => skip_audio = true,
                 unknown => return Err(format!("unknown argument: {unknown}")),
@@ -70,6 +75,7 @@ impl Args {
             turns,
             soak_minutes,
             audio,
+            reference,
             output,
             skip_audio,
         })
@@ -135,6 +141,7 @@ struct ConversationEvidence {
     asr_partial_update_ms: Vec<f64>,
     barge_in_to_silence_ms: Vec<f64>,
     barge_in_measurement_scope: String,
+    capture_preprocessing_scope: String,
     warmed_gpu_memory_mib: Vec<f64>,
     soak: SoakEvidence,
 }
@@ -160,10 +167,30 @@ async fn run() -> Result<(), String> {
             }
         },
     );
-    let audio = load_recorded_audio(&audio_path)?;
+    let reference_path = args.reference.as_ref().map(|path| {
+        if path.is_absolute() {
+            path.clone()
+        } else {
+            workspace.join(path)
+        }
+    });
     let mut runtime = NativeRuntime::for_development_checkout();
     let vad_model_path = workspace.join(&runtime.profile().vad.legacy_path);
-    let result = run_with_runtime(&args, &audio, &vad_model_path, &mut runtime).await;
+    let captured_audio = load_recorded_audio(&audio_path)?;
+    let reference_audio = reference_path
+        .as_deref()
+        .map(load_recorded_audio)
+        .transpose()?;
+    let audio =
+        preprocess_captured_audio(&captured_audio, reference_audio.as_ref(), &vad_model_path)?;
+    let result = run_with_runtime(
+        &args,
+        &audio,
+        &captured_audio,
+        &vad_model_path,
+        &mut runtime,
+    )
+    .await;
     if let Err(error) = &result {
         match runtime.poll() {
             Ok(status) => eprintln!("native status after failure ({error}): {status:?}"),
@@ -181,6 +208,7 @@ async fn run() -> Result<(), String> {
 async fn run_with_runtime(
     args: &Args,
     audio: &RecordedAudio,
+    captured_audio: &RecordedAudio,
     vad_model_path: &Path,
     runtime: &mut NativeRuntime,
 ) -> Result<(), String> {
@@ -199,6 +227,12 @@ async fn run_with_runtime(
         asr_partial_update_ms: Vec::new(),
         barge_in_to_silence_ms: Vec::new(),
         barge_in_measurement_scope: "prerecorded speech onset through production AEC and Silero VAD, cancellation dispatch, and WASAPI output callback acknowledgement".to_owned(),
+        capture_preprocessing_scope: if args.reference.is_some() {
+            "prerecorded capture and paired playback reference are upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection"
+        } else {
+            "prerecorded capture is upsampled to 48 kHz and passed through the production AEC and Silero frame processor before ASR injection"
+        }
+        .to_owned(),
         warmed_gpu_memory_mib: Vec::new(),
         soak: SoakEvidence {
             requested_minutes: args.soak_minutes,
@@ -247,8 +281,12 @@ async fn run_with_runtime(
     }
 
     if !args.skip_audio {
-        evidence.barge_in_to_silence_ms =
-            measure_barge_in(audio, &playback_fixture, vad_model_path, args.turns)?;
+        evidence.barge_in_to_silence_ms = measure_barge_in(
+            captured_audio,
+            &playback_fixture,
+            vad_model_path,
+            args.turns,
+        )?;
     }
     if args.soak_minutes > 0.0 {
         evidence.soak = run_soak(audio, status.tts_backend, runtime, args.soak_minutes).await;
@@ -309,7 +347,7 @@ async fn measure_turn(
     let cancellation = CancellationToken::new();
     let llm_task = tokio::spawn({
         let prompt = format!(
-            "Reply with exactly two short sentences about this transcript: {}",
+            "Return exactly these two sentences and no other text: \"I heard the transcript clearly. I will answer it locally.\" The transcript was: {}",
             transcription.text
         );
         let cancellation = cancellation.clone();
@@ -668,6 +706,42 @@ fn load_recorded_audio(path: &Path) -> Result<RecordedAudio, String> {
         .ok_or_else(|| "prerecorded audio contains no active speech frames".to_owned())?;
     Ok(RecordedAudio {
         path: path.to_path_buf(),
+        samples,
+        first_active_sample,
+        last_active_sample,
+    })
+}
+
+fn preprocess_captured_audio(
+    audio: &RecordedAudio,
+    reference_audio: Option<&RecordedAudio>,
+    vad_model_path: &Path,
+) -> Result<RecordedAudio, String> {
+    let mut processor = CaptureProcessor::new(40, Some(vad_model_path))?;
+    let mut samples = Vec::with_capacity(audio.samples.len());
+    let mut speech_seen = false;
+    for (frame_index, source) in audio.samples.chunks(ACTIVITY_FRAME_SAMPLES).enumerate() {
+        let mut capture = [0.0; DEVICE_FRAME_SAMPLES];
+        let mut reference = [0.0; DEVICE_FRAME_SAMPLES];
+        for (index, sample) in capture.iter_mut().enumerate() {
+            *sample = source.get(index / 3).copied().unwrap_or_default();
+            let reference_index = frame_index * ACTIVITY_FRAME_SAMPLES + index / 3;
+            reference[index] = reference_audio
+                .and_then(|audio| audio.samples.get(reference_index))
+                .copied()
+                .unwrap_or_default();
+        }
+        let frame = processor.process(&capture, &reference)?;
+        speech_seen |= frame.speech_active;
+        samples.extend_from_slice(&frame.asr_samples[..source.len()]);
+    }
+    if !speech_seen {
+        return Err("Silero did not detect speech in the prerecorded capture".to_owned());
+    }
+    let (first_active_sample, last_active_sample) = active_speech_bounds(&samples)
+        .ok_or_else(|| "processed capture contains no active speech frames".to_owned())?;
+    Ok(RecordedAudio {
+        path: audio.path.clone(),
         samples,
         first_active_sample,
         last_active_sample,

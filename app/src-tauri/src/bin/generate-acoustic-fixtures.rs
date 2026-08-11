@@ -1,8 +1,11 @@
-use fasttalk_app_lib::native::KOKORO_BASE_URL;
+use fasttalk_app_lib::native::{KOKORO_BASE_URL, NativeRuntime, NativeRuntimeStatus};
 use fasttalk_pipeline::{CancellationToken, KokoroClient, TtsEvent};
+use fasttalk_runtime::WorkerState;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 const OUTPUT_SAMPLE_RATE: u32 = 16_000;
 
@@ -15,6 +18,19 @@ async fn main() {
 }
 
 async fn run() -> Result<(), String> {
+    let mut runtime = NativeRuntime::for_development_checkout();
+    let result = async {
+        wait_for_workers(&mut runtime).await?;
+        generate().await
+    }
+    .await;
+    let stop_result = runtime.stop().map_err(|error| error.to_string());
+    result?;
+    stop_result?;
+    Ok(())
+}
+
+async fn generate() -> Result<(), String> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let output = workspace.join("tests/fixtures/audio");
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
@@ -47,17 +63,52 @@ async fn run() -> Result<(), String> {
     );
     write_fixture(&output.join("background-noise.wav"), &with_tail(noisy))?;
 
-    let foreground = synthesize("Can you hear my question clearly?").await?;
+    let mut foreground = vec![0.0; OUTPUT_SAMPLE_RATE as usize];
+    foreground.extend(synthesize("Can you hear my question clearly?").await?);
     let playback = read_wav(
         &workspace.join(".cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav"),
     )?;
+    let mut playback = playback;
+    playback.truncate(foreground.len());
+    let mut echo = delayed(&playback, OUTPUT_SAMPLE_RATE as usize * 40 / 1_000);
+    echo.truncate(foreground.len());
+    let speaker_playback = with_tail(mix(&foreground, &echo, 0.10));
+    write_fixture(&output.join("speaker-playback.wav"), &speaker_playback)?;
+    let mut playback_reference = playback;
+    playback_reference.resize(speaker_playback.len(), 0.0);
     write_fixture(
-        &output.join("speaker-playback.wav"),
-        &with_tail(mix(&foreground, &playback, 0.18)),
+        &output.join("speaker-playback-reference.wav"),
+        &playback_reference,
     )?;
 
     println!("wrote acoustic fixtures to {}", output.display());
     Ok(())
+}
+
+async fn wait_for_workers(runtime: &mut NativeRuntime) -> Result<NativeRuntimeStatus, String> {
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let mut status = runtime.start().map_err(|error| error.to_string())?;
+    loop {
+        let ready = [&status.llm, &status.speech, &status.kokoro]
+            .into_iter()
+            .flatten()
+            .all(|worker| worker.state == WorkerState::Ready);
+        if ready {
+            return Ok(status);
+        }
+        if [&status.llm, &status.speech, &status.kokoro]
+            .into_iter()
+            .flatten()
+            .any(|worker| worker.state == WorkerState::Failed)
+        {
+            return Err(format!("native worker failed while starting: {status:?}"));
+        }
+        if Instant::now() >= deadline {
+            return Err("native workers were not ready after 300 seconds".to_owned());
+        }
+        sleep(Duration::from_secs(1)).await;
+        status = runtime.poll().map_err(|error| error.to_string())?;
+    }
 }
 
 async fn synthesize(text: &str) -> Result<Vec<f32>, String> {
@@ -120,6 +171,12 @@ fn mix(foreground: &[f32], background: &[f32], background_gain: f32) -> Vec<f32>
             let background = background.get(index).copied().unwrap_or_default();
             (foreground + background * background_gain).clamp(-1.0, 1.0)
         })
+        .collect()
+}
+
+fn delayed(samples: &[f32], delay_samples: usize) -> Vec<f32> {
+    std::iter::repeat_n(0.0, delay_samples)
+        .chain(samples.iter().copied())
         .collect()
 }
 

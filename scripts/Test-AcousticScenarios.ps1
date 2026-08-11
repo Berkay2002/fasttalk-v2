@@ -16,12 +16,16 @@ $fixtures = @(
     @{ Name = "short-acknowledgement.wav"; Expected = "yes" },
     @{ Name = "long-question.wav"; Expected = "local|voice assistant" },
     @{ Name = "background-noise.wav"; Expected = "train|noon" },
-    @{ Name = "speaker-playback.wav"; Expected = "hear|question" }
+    @{ Name = "speaker-playback.wav"; Expected = "hear|question"; Reference = "tests\fixtures\audio\speaker-playback-reference.wav" }
 )
 $results = foreach ($fixture in $fixtures) {
     $audio = Join-Path $workspace "tests\fixtures\audio\$($fixture.Name)"
     $output = Join-Path $workspace "$OutputRoot\$([IO.Path]::GetFileNameWithoutExtension($fixture.Name)).json"
-    $gateOutput = & $gate --turns 1 --skip-audio --audio $audio --output $output
+    $arguments = @("--turns", "1", "--skip-audio", "--audio", $audio, "--output", $output)
+    if ($fixture.Reference) {
+        $arguments += @("--reference", (Join-Path $workspace $fixture.Reference))
+    }
+    $gateOutput = & $gate @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Acoustic scenario failed: $($fixture.Name)`n$($gateOutput -join [Environment]::NewLine)"
     }
@@ -32,9 +36,14 @@ $results = foreach ($fixture in $fixtures) {
     if ($evidence.transcripts[0] -notmatch $fixture.Expected) {
         throw "Acoustic scenario missed '$($fixture.Expected)': $($evidence.transcripts[0])"
     }
+    if (@($evidence.synthesizedClauseCounts).Count -ne 1 -or $evidence.synthesizedClauseCounts[0] -lt 2) {
+        throw "Acoustic scenario did not synthesize the full two-clause response: $($fixture.Name)"
+    }
     [ordered]@{
         fixture = $fixture.Name
         transcript = $evidence.transcripts[0]
+        synthesizedClauseCount = $evidence.synthesizedClauseCounts[0]
+        capturePreprocessingScope = $evidence.capturePreprocessingScope
         endOfSpeechToFirstAudioMs = $evidence.endOfSpeechToFirstAudioMs[0]
         asrPartialMaximumMs = (@($evidence.asrPartialUpdateMs) | Measure-Object -Maximum).Maximum
     }
