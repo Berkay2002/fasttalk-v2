@@ -39,3 +39,9 @@ Qwen3.6 27B profile missed the 20 token/s gate under representative desktop
 load, while this compatibility profile passed the throughput and latency gates.
 Regenerate a manifest with `New-ModelManifest.ps1`, then sign it with an
 explicit private seed using `Sign-ModelManifest.ps1`.
+
+Hardware and model runtime choices are kept in
+`config/runtime-profiles.json`. A profile owns its model bindings, llama.cpp
+context and parallelism, GPU reserve, and measured worker-memory figures. The
+runtime detects total VRAM and admits GPU TTS against that profile instead of
+assuming every machine has a 24 GB GPU.

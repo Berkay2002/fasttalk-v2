@@ -1,0 +1,42 @@
+scope,profile,workload,samples,metric,value,unit,gate,status,evidence
+llm,qwen3.6-27b-q4-k-m-16k-non-thinking,warm dedicated benchmark,20,ttft_p50,173.545,ms,900,pass,qwen36-llm.json
+llm,qwen3.6-27b-q4-k-m-16k-non-thinking,warm dedicated benchmark,20,ttft_p95,177.395,ms,900,pass,qwen36-llm.json
+llm,qwen3.6-27b-q4-k-m-16k-non-thinking,dedicated generation benchmark,5,generation_min,17.197,tokens_per_second,20,fail,qwen36-llm.json
+llm,qwen3.6-27b-q4-k-m-16k-non-thinking,dedicated generation benchmark,5,generation_median,17.489,tokens_per_second,20,fail,qwen36-llm.json
+llm,qwen3.6-27b-q4-k-m-16k-non-thinking,warm dedicated benchmark,1,gpu_total,20545,MiB,23040,pass,qwen36-llm.json
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,warm dedicated benchmark,20,ttft_p50,65.097,ms,900,pass,qwen35-llm.json
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,warm dedicated benchmark,20,ttft_p95,68.446,ms,900,pass,qwen35-llm.json
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,dedicated generation benchmark,5,generation_min,47.364,tokens_per_second,20,pass,qwen35-llm.json
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,dedicated generation benchmark,5,generation_median,48.700,tokens_per_second,20,pass,qwen35-llm.json
+llm,qwen3.5-9b-q5-k-m-16k-non-thinking,warm dedicated benchmark,1,gpu_total,9815,MiB,23040,pass,qwen35-llm.json
+stt,nemotron-3.5-asr-streaming-0.6b-q8,jfk prerecorded stream,20,transcript_mismatches,0,count,0,pass,asr.json
+stt,nemotron-3.5-asr-streaming-0.6b-q8,jfk prerecorded stream,20,streaming_realtime_factor,35.0679,x_realtime,1,pass,asr.json
+stt,nemotron-3.5-asr-streaming-0.6b-q8,jfk prerecorded stream,20,partial_update_derived_upper_bound,164.5626,ms,250,pass,asr.json
+tts,magpie-v2602-f16-nanocodec-f16,request-buffered prototype,20,first_pcm_p50,953.489,ms,,observation,magpie-buffered.json
+tts,magpie-v2602-f16-nanocodec-f16,request-buffered prototype,20,first_pcm_p95,1078.276,ms,,observation,magpie-buffered.json
+tts,magpie-v2602-f16-nanocodec-f16,request-buffered prototype,20,realtime_factor_max,0.2041,ratio,1,pass,magpie-buffered.json
+tts,magpie-v2602-f16-nanocodec-f16,request-buffered prototype,20,cancellation_max,0.823,ms,150,pass,magpie-buffered.json
+tts,magpie-v2602-f16-nanocodec-f16,chunked pcm transport,3,first_pcm_p50,43.197,ms,,observation,magpie-streaming.json
+tts,magpie-v2602-f16-nanocodec-f16,chunked pcm transport,3,first_pcm_p95,43.810,ms,,observation,magpie-streaming.json
+tts,magpie-v2602-f16-nanocodec-f16,chunked pcm transport,3,realtime_factor_max,0.2076,ratio,1,pass,magpie-streaming.json
+tts,magpie-v2602-f16-nanocodec-f16,chunked pcm transport,3,cancellation_max,2.613,ms,150,pass,magpie-streaming.json
+tts,kokoro-82m-int8-cpu,v1 phrase transport,1,first_pcm,3734.571,ms,,observation,kokoro-v1.json
+tts,kokoro-82m-int8-cpu,compact phrase transport,1,first_pcm,5106.072,ms,,observation,kokoro-compact.json
+combined,qwen3.6-asr-magpie,warm workers with desktop baseline,1,gpu_total,22450,MiB,23040,pass,qwen36-combined-vram.json
+combined,qwen3.6-asr-magpie,warm workers with desktop baseline,1,gpu_worker_delta,19584,MiB,,observation,qwen36-combined-vram.json
+combined,qwen3.5-asr,warm workers with desktop baseline,1,gpu_total,11071,MiB,23040,pass,qwen35-asr-vram.json
+combined,qwen3.5-asr,warm workers with desktop baseline,1,gpu_worker_delta,7902,MiB,,observation,qwen35-asr-vram.json
+combined,qwen3.5-asr-magpie,warm workers with desktop baseline,1,gpu_total,12000,MiB,23040,pass,qwen35-combined-vram.json
+combined,qwen3.5-asr-magpie,warm workers with desktop baseline,1,gpu_worker_delta,8857,MiB,,observation,qwen35-combined-vram.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,20,end_speech_to_first_audio_p50,790.322,ms,1200,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,20,end_speech_to_first_audio_p95,957.825,ms,1800,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,20,warm_llm_ttft_p95,102.336,ms,900,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,5,llm_generation_min,47.364,tokens_per_second,20,pass,qwen35-llm.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,540,asr_partial_event_max,24.003,ms,250,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,20,barge_in_cancellation_max,9.903,ms,150,pass,conversation-20-turn.json
+conversation,qwen3.5-asr-magpie,jfk prerecorded end to end,20,gpu_total_max,12100,MiB,23040,pass,conversation-20-turn.json
+soak,qwen3.5-asr-magpie,continuous warm conversation,1,duration,30.208,minutes,30,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous warm conversation,124,completed_turns,124,count,1,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous warm conversation,124,oom_count,0,count,0,pass,conversation-30-minute-soak.json
+soak,qwen3.5-asr-magpie,continuous warm conversation,124,worker_failure_count,0,count,0,pass,conversation-30-minute-soak.json
+acoustic,qwen3.5-asr-magpie,six generated prerecorded scenarios,6,scenario_transcript_checks,6,count,6,pass,acoustic-scenarios.json

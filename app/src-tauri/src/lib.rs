@@ -7,7 +7,7 @@ use fasttalk_conversation::{
 };
 use fasttalk_model_manager::{InstallProgress, ModelManager, ModelStatus, SignedManifest};
 use fasttalk_runtime::WorkerState;
-use native::{NativeModelPaths, NativeRuntime, NativeRuntimeStatus};
+use native::{NativeModelPaths, NativeRuntime, NativeRuntimeStatus, RuntimeProfile};
 use orchestrator::{ConversationController, SharedAudio, SharedEngine};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -245,7 +245,10 @@ async fn conversation_stop(state: State<'_, AppState>) -> Result<EngineSnapshot,
 
 #[tauri::command]
 fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, CommandError> {
-    let models = native_model_paths(&state.models)?;
+    let profile = lock(&state.runtime, "runtimeUnavailable")?
+        .profile()
+        .clone();
+    let models = native_model_paths(&state.models, &profile)?;
     let mut runtime = lock(&state.runtime, "runtimeUnavailable")?;
     runtime.configure_models(models).map_err(runtime_error)?;
     let status = runtime.start().map_err(runtime_error)?;
@@ -253,7 +256,10 @@ fn runtime_start(state: State<'_, AppState>) -> Result<NativeRuntimeStatus, Comm
     Ok(status)
 }
 
-fn native_model_paths(models: &ModelManager) -> Result<NativeModelPaths, CommandError> {
+fn native_model_paths(
+    models: &ModelManager,
+    profile: &RuntimeProfile,
+) -> Result<NativeModelPaths, CommandError> {
     let root = |id: &str| {
         models
             .resolved_root(id)
@@ -263,17 +269,17 @@ fn native_model_paths(models: &ModelManager) -> Result<NativeModelPaths, Command
                 message: format!("required model group is not ready: {id}"),
             })
     };
-    let qwen = root("qwen")?;
-    let asr = root("nemotron-asr")?;
-    let magpie = root("magpie-tts")?;
-    let nanocodec = root("nanocodec")?;
-    let kokoro = root("kokoro")?;
+    let qwen = root(&profile.llm.model.group_id)?;
+    let asr = root(&profile.asr.group_id)?;
+    let magpie = root(&profile.tts.model.group_id)?;
+    let nanocodec = root(&profile.codec.group_id)?;
+    let kokoro = root(&profile.fallback_tts.group_id)?;
     Ok(NativeModelPaths {
-        qwen: qwen.join("Qwen3.5-9B-Q5_K_M.gguf"),
-        asr: asr.join("nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
-        magpie: magpie.join("magpie_tts_multilingual_357m.v2602.f16.gguf"),
-        nanocodec: nanocodec.join("nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf"),
-        magpie_tokenizer: magpie.join("extracted"),
+        qwen: qwen.join(&profile.llm.model.artifact),
+        asr: asr.join(&profile.asr.artifact),
+        magpie: magpie.join(&profile.tts.model.artifact),
+        nanocodec: nanocodec.join(&profile.codec.artifact),
+        magpie_tokenizer: magpie.join(&profile.tts.tokenizer_artifact),
         kokoro,
     })
 }

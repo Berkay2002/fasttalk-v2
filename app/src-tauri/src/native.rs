@@ -1,7 +1,7 @@
 use fasttalk_runtime::{
     LoopbackHealthProbe, RestartPolicy, SupervisorError, WorkerSpec, WorkerStatus, WorkerSupervisor,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -11,14 +11,61 @@ use std::time::Duration;
 const LLM_PORT: u16 = 18_080;
 const SPEECH_PORT: u16 = 18_081;
 const KOKORO_PORT: u16 = 18_082;
-const MAX_WARMED_VRAM_MIB: u64 = 23_040;
-const MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB: u64 = 8_857;
-const MEASURED_COMPAT_ASR_VRAM_MIB: u64 = 7_902;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum PreferredLlmProfile {
-    Qwen35Compatibility,
+struct RuntimeProfiles {
+    schema_version: u32,
+    default_profile: String,
+    profiles: Vec<RuntimeProfile>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProfile {
+    pub id: String,
+    pub display_name: String,
+    pub minimum_gpu_memory_mi_b: u64,
+    pub reserve_gpu_memory_mi_b: u64,
+    pub measured_worker_memory_mi_b: MeasuredWorkerMemory,
+    pub llm: LlmProfile,
+    pub asr: ModelBinding,
+    pub tts: TtsBinding,
+    pub codec: ModelBinding,
+    pub fallback_tts: ModelBinding,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeasuredWorkerMemory {
+    pub with_preferred_tts: u64,
+    pub with_fallback_tts: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelBinding {
+    pub group_id: String,
+    pub artifact: String,
+    pub legacy_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmProfile {
+    #[serde(flatten)]
+    pub model: ModelBinding,
+    pub context_size: u32,
+    pub parallel: u32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TtsBinding {
+    #[serde(flatten)]
+    pub model: ModelBinding,
+    pub tokenizer_artifact: String,
+    pub tokenizer_legacy_path: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -31,10 +78,12 @@ pub enum PreferredTtsBackend {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VramAdmission {
+    pub profile_id: String,
+    pub total_mib: Option<u64>,
     pub current_used_mib: Option<u64>,
     pub projected_warmed_mib: Option<u64>,
     pub limit_mib: u64,
-    pub llm_profile: PreferredLlmProfile,
+    pub reserve_mib: u64,
     pub backend: PreferredTtsBackend,
     pub reason: String,
 }
@@ -45,13 +94,14 @@ pub struct NativeRuntimeStatus {
     pub llm: Option<WorkerStatus>,
     pub speech: Option<WorkerStatus>,
     pub kokoro: Option<WorkerStatus>,
-    pub llm_profile: PreferredLlmProfile,
+    pub profile_id: String,
     pub tts_backend: PreferredTtsBackend,
     pub vram_admission: VramAdmission,
 }
 
 pub struct NativeRuntime {
     root: PathBuf,
+    profile: RuntimeProfile,
     models: NativeModelPaths,
     llm: Option<WorkerSupervisor>,
     speech: Option<WorkerSupervisor>,
@@ -76,25 +126,30 @@ impl NativeRuntime {
     }
 
     pub fn for_root(root: PathBuf) -> Self {
+        let profile = default_runtime_profile();
         let models = NativeModelPaths {
-            qwen: root.join(".cache/models/qwen3.5-9b/Qwen3.5-9B-Q5_K_M.gguf"),
-            asr: root.join(".cache/models/nemotron-asr/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"),
-            magpie: root
-                .join(".cache/models/magpie-tts/magpie_tts_multilingual_357m.v2602.f16.gguf"),
-            nanocodec: root.join(
-                ".cache/models/nano-codec/nemo_nano_codec_22khz_1.89kbps_21.5fps.decoder.f16.gguf",
-            ),
-            magpie_tokenizer: root.join(".cache/models/magpie-tts/extracted"),
-            kokoro: root.join(".cache/models/kokoro-sherpa-v1.0"),
+            qwen: root.join(&profile.llm.model.legacy_path),
+            asr: root.join(&profile.asr.legacy_path),
+            magpie: root.join(&profile.tts.model.legacy_path),
+            nanocodec: root.join(&profile.codec.legacy_path),
+            magpie_tokenizer: root.join(&profile.tts.tokenizer_legacy_path),
+            kokoro: root.join(&profile.fallback_tts.legacy_path),
         };
+        let vram_admission = fallback_admission(&profile, "GPU memory has not been measured yet");
         Self {
             root,
+            profile,
             models,
             llm: None,
             speech: None,
             kokoro: None,
-            vram_admission: fallback_admission("GPU memory has not been measured yet"),
+            vram_admission,
         }
+    }
+
+    #[must_use]
+    pub fn profile(&self) -> &RuntimeProfile {
+        &self.profile
     }
 
     pub fn configure_models(&mut self, models: NativeModelPaths) -> Result<(), SupervisorError> {
@@ -111,7 +166,7 @@ impl NativeRuntime {
         if self.llm.is_some() || self.speech.is_some() || self.kokoro.is_some() {
             return self.poll();
         }
-        self.vram_admission = admit_vram();
+        self.vram_admission = admit_vram(&self.profile);
         let mut llm = self.build_llm()?;
         let mut speech = self.build_speech()?;
         let mut kokoro = self.build_kokoro()?;
@@ -144,7 +199,7 @@ impl NativeRuntime {
                 .as_mut()
                 .map(WorkerSupervisor::poll)
                 .transpose()?,
-            llm_profile: self.vram_admission.llm_profile,
+            profile_id: self.profile.id.clone(),
             tts_backend: self.vram_admission.backend,
             vram_admission: self.vram_admission.clone(),
         })
@@ -164,7 +219,7 @@ impl NativeRuntime {
             llm: self.llm.as_ref().map(WorkerSupervisor::status),
             speech: self.speech.as_ref().map(WorkerSupervisor::status),
             kokoro: self.kokoro.as_ref().map(WorkerSupervisor::status),
-            llm_profile: self.vram_admission.llm_profile,
+            profile_id: self.profile.id.clone(),
             tts_backend: self.vram_admission.backend,
             vram_admission: self.vram_admission.clone(),
         };
@@ -177,13 +232,15 @@ impl NativeRuntime {
     fn build_llm(&self) -> Result<WorkerSupervisor, SupervisorError> {
         let executable = self.root.join("runtime/llm/llama-server.exe");
         let model = &self.models.qwen;
+        let context_size = self.profile.llm.context_size.to_string();
+        let parallel = self.profile.llm.parallel.to_string();
         let arguments = os_arguments([
             "--model",
             path_text(model)?,
             "--ctx-size",
-            "16384",
+            &context_size,
             "--parallel",
-            "4",
+            &parallel,
             "--gpu-layers",
             "all",
             "--flash-attn",
@@ -312,55 +369,95 @@ impl NativeRuntime {
     }
 }
 
-fn admit_vram() -> VramAdmission {
-    admission_for(query_used_vram_mib())
+fn default_runtime_profile() -> RuntimeProfile {
+    let profiles: RuntimeProfiles =
+        serde_json::from_str(include_str!("../../../config/runtime-profiles.json"))
+            .expect("embedded runtime profile JSON must be valid");
+    assert_eq!(
+        profiles.schema_version, 1,
+        "unsupported runtime profile schema"
+    );
+    profiles
+        .profiles
+        .into_iter()
+        .find(|profile| profile.id == profiles.default_profile)
+        .expect("default runtime profile must exist")
 }
 
-fn admission_for(current_used_mib: Option<u64>) -> VramAdmission {
-    let Some(current_used_mib) = current_used_mib else {
+#[derive(Clone, Copy, Debug)]
+struct GpuMemory {
+    total_mib: u64,
+    used_mib: u64,
+}
+
+fn admit_vram(profile: &RuntimeProfile) -> VramAdmission {
+    admission_for(profile, query_vram_mib())
+}
+
+fn admission_for(profile: &RuntimeProfile, memory: Option<GpuMemory>) -> VramAdmission {
+    let Some(memory) = memory else {
         return fallback_admission(
+            profile,
             "NVIDIA memory usage could not be measured, so GPU TTS was disabled",
         );
     };
-    let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB);
-    if projected_warmed_mib <= MAX_WARMED_VRAM_MIB {
+    let limit_mib = memory
+        .total_mib
+        .saturating_sub(profile.reserve_gpu_memory_mi_b);
+    let projected_warmed_mib = memory
+        .used_mib
+        .saturating_add(profile.measured_worker_memory_mi_b.with_preferred_tts);
+    if memory.total_mib >= profile.minimum_gpu_memory_mi_b && projected_warmed_mib <= limit_mib {
         VramAdmission {
-            current_used_mib: Some(current_used_mib),
+            profile_id: profile.id.clone(),
+            total_mib: Some(memory.total_mib),
+            current_used_mib: Some(memory.used_mib),
             projected_warmed_mib: Some(projected_warmed_mib),
-            limit_mib: MAX_WARMED_VRAM_MIB,
-            llm_profile: PreferredLlmProfile::Qwen35Compatibility,
+            limit_mib,
+            reserve_mib: profile.reserve_gpu_memory_mi_b,
             backend: PreferredTtsBackend::Magpie,
-            reason: "Qwen3.6 missed the throughput gate under desktop load; the measured Qwen3.5 compatibility profile leaves room for warmed Magpie TTS".to_owned(),
+            reason: format!(
+                "{} leaves the configured GPU reserve available",
+                profile.display_name
+            ),
         }
     } else {
-        let projected_warmed_mib = current_used_mib.saturating_add(MEASURED_COMPAT_ASR_VRAM_MIB);
+        let projected_warmed_mib = memory
+            .used_mib
+            .saturating_add(profile.measured_worker_memory_mi_b.with_fallback_tts);
         VramAdmission {
-            current_used_mib: Some(current_used_mib),
+            profile_id: profile.id.clone(),
+            total_mib: Some(memory.total_mib),
+            current_used_mib: Some(memory.used_mib),
             projected_warmed_mib: Some(projected_warmed_mib),
-            limit_mib: MAX_WARMED_VRAM_MIB,
-            llm_profile: PreferredLlmProfile::Qwen35Compatibility,
+            limit_mib,
+            reserve_mib: profile.reserve_gpu_memory_mi_b,
             backend: PreferredTtsBackend::Kokoro,
-            reason: "projected warmed usage exceeds the GPU memory policy; using CPU TTS"
+            reason: "the selected profile does not fit with GPU TTS and its configured reserve"
                 .to_owned(),
         }
     }
 }
 
-fn fallback_admission(reason: &str) -> VramAdmission {
+fn fallback_admission(profile: &RuntimeProfile, reason: &str) -> VramAdmission {
     VramAdmission {
+        profile_id: profile.id.clone(),
+        total_mib: None,
         current_used_mib: None,
         projected_warmed_mib: None,
-        limit_mib: MAX_WARMED_VRAM_MIB,
-        llm_profile: PreferredLlmProfile::Qwen35Compatibility,
+        limit_mib: profile
+            .minimum_gpu_memory_mi_b
+            .saturating_sub(profile.reserve_gpu_memory_mi_b),
+        reserve_mib: profile.reserve_gpu_memory_mi_b,
         backend: PreferredTtsBackend::Kokoro,
         reason: reason.to_owned(),
     }
 }
 
-fn query_used_vram_mib() -> Option<u64> {
+fn query_vram_mib() -> Option<GpuMemory> {
     let mut command = Command::new("nvidia-smi");
     command.args([
-        "--query-gpu=memory.used",
+        "--query-gpu=memory.total,memory.used",
         "--format=csv,noheader,nounits",
         "--id=0",
     ]);
@@ -373,13 +470,12 @@ fn query_used_vram_mib() -> Option<u64> {
     if !output.status.success() {
         return None;
     }
-    String::from_utf8(output.stdout)
-        .ok()?
-        .lines()
-        .next()?
-        .trim()
-        .parse()
-        .ok()
+    let line = String::from_utf8(output.stdout).ok()?;
+    let mut values = line.lines().next()?.split(',').map(str::trim);
+    Some(GpuMemory {
+        total_mib: values.next()?.parse().ok()?,
+        used_mib: values.next()?.parse().ok()?,
+    })
 }
 
 fn path_text(path: &Path) -> Result<&str, SupervisorError> {
@@ -418,25 +514,47 @@ mod tests {
 
     #[test]
     fn vram_policy_uses_cpu_tts_above_the_measured_limit() {
-        let exact = admission_for(Some(
-            MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB,
-        ));
+        let profile = default_runtime_profile();
+        let limit = profile.minimum_gpu_memory_mi_b - profile.reserve_gpu_memory_mi_b;
+        let exact = admission_for(
+            &profile,
+            Some(GpuMemory {
+                total_mib: profile.minimum_gpu_memory_mi_b,
+                used_mib: limit - profile.measured_worker_memory_mi_b.with_preferred_tts,
+            }),
+        );
         assert_eq!(exact.backend, PreferredTtsBackend::Magpie);
-        assert_eq!(exact.projected_warmed_mib, Some(MAX_WARMED_VRAM_MIB));
+        assert_eq!(exact.projected_warmed_mib, Some(limit));
 
-        let over = admission_for(Some(
-            MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB + 1,
-        ));
+        let used_mib = limit - profile.measured_worker_memory_mi_b.with_preferred_tts + 1;
+        let over = admission_for(
+            &profile,
+            Some(GpuMemory {
+                total_mib: profile.minimum_gpu_memory_mi_b,
+                used_mib,
+            }),
+        );
         assert_eq!(over.backend, PreferredTtsBackend::Kokoro);
         assert_eq!(
             over.projected_warmed_mib,
-            Some(
-                MAX_WARMED_VRAM_MIB - MEASURED_COMPAT_ASR_MAGPIE_VRAM_MIB
-                    + 1
-                    + MEASURED_COMPAT_ASR_VRAM_MIB
-            )
+            Some(used_mib + profile.measured_worker_memory_mi_b.with_fallback_tts)
         );
-        assert_eq!(admission_for(None).backend, PreferredTtsBackend::Kokoro);
+        assert_eq!(
+            admission_for(&profile, None).backend,
+            PreferredTtsBackend::Kokoro
+        );
+
+        let larger_gpu = admission_for(
+            &profile,
+            Some(GpuMemory {
+                total_mib: 32_768,
+                used_mib: 3_000,
+            }),
+        );
+        assert_eq!(
+            larger_gpu.limit_mib,
+            32_768 - profile.reserve_gpu_memory_mi_b
+        );
     }
 
     #[test]

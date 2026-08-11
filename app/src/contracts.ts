@@ -79,13 +79,15 @@ export type NativeRuntimeStatus = {
   llm: WorkerStatus | null;
   speech: WorkerStatus | null;
   kokoro: WorkerStatus | null;
-  llmProfile: "qwen35Compatibility";
+  profileId: string;
   ttsBackend: "magpie" | "kokoro";
   vramAdmission: {
     currentUsedMib: number | null;
+    totalMib: number | null;
     projectedWarmedMib: number | null;
     limitMib: number;
-    llmProfile: "qwen35Compatibility";
+    profileId: string;
+    reserveMib: number;
     backend: "magpie" | "kokoro";
     reason: string;
   };
@@ -141,13 +143,15 @@ export const initialRuntimeStatus: NativeRuntimeStatus = {
   llm: null,
   speech: null,
   kokoro: null,
-  llmProfile: "qwen35Compatibility",
+  profileId: "unconfigured",
   ttsBackend: "kokoro",
   vramAdmission: {
     currentUsedMib: null,
+    totalMib: null,
     projectedWarmedMib: null,
-    limitMib: 23_040,
-    llmProfile: "qwen35Compatibility",
+    limitMib: 0,
+    profileId: "unconfigured",
+    reserveMib: 0,
     backend: "kokoro",
     reason: "GPU memory has not been measured yet",
   },

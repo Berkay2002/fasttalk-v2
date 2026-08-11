@@ -24,6 +24,7 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(90);
 struct Args {
     turns: usize,
     soak_minutes: f64,
+    audio: Option<PathBuf>,
     output: PathBuf,
     skip_audio: bool,
 }
@@ -32,6 +33,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut turns: usize = 20;
         let mut soak_minutes: f64 = 0.0;
+        let mut audio = None;
         let mut output = PathBuf::from("artifacts/release/conversation-benchmark.json");
         let mut skip_audio = false;
         let mut arguments = env::args().skip(1);
@@ -47,6 +49,7 @@ impl Args {
                         .parse()
                         .map_err(|_| "--soak-minutes must be a number".to_owned())?;
                 }
+                "--audio" => audio = Some(PathBuf::from(value(&mut arguments, "--audio")?)),
                 "--output" => output = PathBuf::from(value(&mut arguments, "--output")?),
                 "--skip-audio" => skip_audio = true,
                 unknown => return Err(format!("unknown argument: {unknown}")),
@@ -61,6 +64,7 @@ impl Args {
         Ok(Self {
             turns,
             soak_minutes,
+            audio,
             output,
             skip_audio,
         })
@@ -114,6 +118,7 @@ struct ConversationEvidence {
     schema_version: u32,
     prerecorded_audio: String,
     turns: usize,
+    runtime_profile: String,
     tts_backend: PreferredTtsBackend,
     transcripts: Vec<String>,
     first_clauses: Vec<String>,
@@ -136,9 +141,17 @@ async fn main() {
 async fn run() -> Result<(), String> {
     let args = Args::parse()?;
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let audio = load_recorded_audio(
-        &workspace.join(".cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav"),
-    )?;
+    let audio_path = args.audio.as_ref().map_or_else(
+        || workspace.join(".cache/sources/nemo-speech.cpp/test_files/asr/wav/test/jfk.wav"),
+        |path| {
+            if path.is_absolute() {
+                path.clone()
+            } else {
+                workspace.join(path)
+            }
+        },
+    );
+    let audio = load_recorded_audio(&audio_path)?;
     let mut runtime = NativeRuntime::for_development_checkout();
     let result = run_with_runtime(&args, &audio, &mut runtime).await;
     if let Err(error) = &result {
@@ -165,6 +178,7 @@ async fn run_with_runtime(
         schema_version: 1,
         prerecorded_audio: audio.path.display().to_string(),
         turns: args.turns,
+        runtime_profile: status.profile_id.clone(),
         tts_backend: status.tts_backend,
         transcripts: Vec::with_capacity(args.turns),
         first_clauses: Vec::with_capacity(args.turns),

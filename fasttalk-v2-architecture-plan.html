@@ -130,6 +130,7 @@
       <a href="#memory">VRAM</a>
       <a href="#runtime">Runtime</a>
       <a href="#implementation">Implementation</a>
+      <a href="#benchmark-matrix">Matrix</a>
       <a href="#acceptance">Acceptance</a>
       <a href="#sources">Sources</a>
     </nav>
@@ -215,27 +216,27 @@
     </section>
 
     <section id="memory">
-      <h2>24 GB VRAM policy</h2>
+      <h2>Profile-driven VRAM policy</h2>
       <div class="grid">
         <article class="card wide">
           <div class="budget">
-            <div class="budget-row"><div class="budget-label"><span>Qwen3.6 27B + KV/runtime</span><strong>≈18 GB</strong></div><div class="bar"><div class="fill" style="width:75%"></div></div></div>
-            <div class="budget-row"><div class="budget-label"><span>Nemotron ASR</span><strong>≤2 GB</strong></div><div class="bar"><div class="fill asr" style="width:8.3%"></div></div></div>
-            <div class="budget-row"><div class="budget-label"><span>Magpie TTS</span><strong>≤1.5 GB</strong></div><div class="bar"><div class="fill tts" style="width:6.25%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Qwen3.5 + ASR measured worker delta</span><strong>7.90 GB</strong></div><div class="bar"><div class="fill" style="width:33%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Magpie measured incremental delta</span><strong>0.93 GB</strong></div><div class="bar"><div class="fill asr" style="width:3.9%"></div></div></div>
+            <div class="budget-row"><div class="budget-label"><span>Observed desktop baseline</span><strong>3.14 GB</strong></div><div class="bar"><div class="fill tts" style="width:13.1%"></div></div></div>
             <div class="budget-row"><div class="budget-label"><span>Required reserve</span><strong>≥1.5 GB</strong></div><div class="bar"><div class="fill reserve" style="width:6.25%"></div></div></div>
           </div>
         </article>
         <article class="card wide">
           <span class="tag amber">Admission order</span>
           <ol>
-            <li>Load Qwen3.6-27B and Nemotron ASR.</li>
-            <li>Load Magpie only if warmed usage remains at or below 22.5 GB.</li>
-            <li>Otherwise retain Qwen3.6 and move TTS to CPU Kokoro.</li>
-            <li>Use Qwen3.5-9B only if Qwen3.6 still fails memory or latency.</li>
+            <li>Select a named runtime profile compatible with the detected GPU.</li>
+            <li>Compute the admission ceiling from detected total VRAM minus the profile reserve.</li>
+            <li>Load the profile's LLM and ASR, then compare actual usage with its measured worker deltas.</li>
+            <li>Load GPU TTS only when it fits; otherwise use the profile's CPU fallback.</li>
           </ol>
         </article>
       </div>
-      <div class="callout" style="margin-top:18px;"><strong>Artifact size is not peak VRAM.</strong> The decision is made from a combined warmed benchmark while normal desktop applications are open. An empty-GPU benchmark is not representative of the product.</div>
+      <div class="callout" style="margin-top:18px;"><strong>Artifact size is not peak VRAM.</strong> The decision is made from a combined warmed benchmark while normal desktop applications are open. The current RTX 3090 profile selects Qwen3.5 9B Q5_K_M because Qwen3.6 27B missed the 20 token/s gate. Other hardware is described by another profile rather than a hardcoded 24 GB assumption.</div>
     </section>
 
     <section id="runtime">
@@ -301,7 +302,47 @@
           <h3>Installer and release gate</h3>
           <p class="muted">Package a current-user NSIS installer, private CUDA runtime dependencies, VC++ prerequisite, signatures, clean-machine verification, offline tests, and uninstall coverage.</p>
         </article>
+        <article class="card wide phase" data-step="7">
+          <h3>Cross-profile benchmark matrix</h3>
+          <p class="muted">After the baseline release is verified, discover similarly rated local LLM, STT, and TTS candidates on Hugging Face, express compatible combinations as runtime profiles, and run the existing isolated, integrated, acoustic, fault, and soak harnesses against them. Preserve passing and failing results as versioned empirical evidence.</p>
+        </article>
       </div>
+    </section>
+
+    <section id="benchmark-matrix">
+      <h2>Final cross-profile benchmark matrix</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Candidate admission</h3>
+          <ol>
+            <li>Use authenticated Hugging Face discovery to find similarly rated, actively maintained candidates in each component class.</li>
+            <li>Record exact repository revision, artifact hash, quantization, license, language coverage, runtime support, and Windows CUDA or CPU compatibility.</li>
+            <li>Reject candidates that need an unrelated serving stack, cannot stream, do not fit the detected hardware with reserve, or cannot be redistributed under the product's packaging model.</li>
+            <li>Add admitted candidates as named entries in <code>runtime-profiles.json</code>; do not branch product code per model.</li>
+          </ol>
+        </article>
+        <article class="card wide">
+          <h3>Staged matrix, not a blind Cartesian product</h3>
+          <ol>
+            <li>Benchmark each LLM, STT, and TTS candidate in isolation with fixed inputs and warmup.</li>
+            <li>Run pairwise memory and cancellation checks for candidates that pass their component gates.</li>
+            <li>Run full end-to-end turns only for combinations that fit the profile reserve.</li>
+            <li>Run acoustic scenarios, fault injection, and the 30-minute soak for finalists.</li>
+          </ol>
+        </article>
+        <article class="card full">
+          <table>
+            <thead><tr><th>Layer</th><th>Performance</th><th>Quality</th><th>System evidence</th></tr></thead>
+            <tbody>
+              <tr><td>LLM</td><td>TTFT, token/s, context cost, VRAM</td><td>Fixed prompt rubric, instruction following, conversation recall</td><td>Streaming deltas, cancellation, long-session behavior</td></tr>
+              <tr><td>STT</td><td>Partial/final latency, RTF, VRAM</td><td>WER on clean, noisy, hesitant, short, and playback audio</td><td>Endpoint behavior, recovery, transcript stability</td></tr>
+              <tr><td>TTS</td><td>First PCM, RTF, cancellation, VRAM</td><td>Blind paired listening and pronunciation set</td><td>Incremental PCM proof, clause continuity, fallback behavior</td></tr>
+              <tr><td>End to end</td><td>Speech end to first audio p50/p95, sustained VRAM</td><td>Task completion and conversational preference</td><td>Integration suite, faults, offline run, 30-minute soak</td></tr>
+            </tbody>
+          </table>
+        </article>
+      </div>
+      <div class="callout" style="margin-top:18px;"><strong>Ordering constraint.</strong> This matrix starts only after the baseline implementation and release verification are effectively complete. The passing baseline remains the control, and candidate discovery must not destabilize it.</div>
     </section>
 
     <section id="acceptance">
@@ -311,7 +352,7 @@
           <div class="metric"><span>End of speech → first audio, p50</span><strong>≤ 1.2 s</strong></div>
           <div class="metric"><span>End of speech → first audio, p95</span><strong>≤ 1.8 s</strong></div>
           <div class="metric"><span>Warm LLM first token, p95</span><strong>≤ 900 ms</strong></div>
-          <div class="metric"><span>Qwen3.6 generation</span><strong>≥ 20 tok/s</strong></div>
+          <div class="metric"><span>Selected LLM generation</span><strong>≥ 20 tok/s</strong></div>
         </article>
         <article class="card wide">
           <div class="metric"><span>ASR partial update</span><strong>≤ 250 ms</strong></div>
