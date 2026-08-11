@@ -14,15 +14,15 @@ $manifestPath = (Resolve-Path -LiteralPath (Join-Path $workspace $Manifest)).Pat
 $publicKeyPath = Join-Path $workspace $PublicKey
 $signaturePath = Join-Path $workspace $Signature
 
-& cargo run --quiet -p fasttalk-model-manager --bin fasttalk-model-sign -- `
+& cargo run --quiet --release -p fasttalk-model-manager --bin fasttalk-model-sign -- `
     public-key $seedPath $publicKeyPath
 if ($LASTEXITCODE -ne 0) { throw "Public-key generation failed ($LASTEXITCODE)" }
 
-& cargo run --quiet -p fasttalk-model-manager --bin fasttalk-model-sign -- `
+& cargo run --quiet --release -p fasttalk-model-manager --bin fasttalk-model-sign -- `
     sign $seedPath $manifestPath $signaturePath
 if ($LASTEXITCODE -ne 0) { throw "Manifest signing failed ($LASTEXITCODE)" }
 
-& cargo run --quiet -p fasttalk-model-manager --bin fasttalk-model-sign -- `
+& cargo run --quiet --release -p fasttalk-model-manager --bin fasttalk-model-sign -- `
     verify $publicKeyPath $manifestPath $signaturePath
 if ($LASTEXITCODE -ne 0) { throw "Manifest signature verification failed ($LASTEXITCODE)" }
 

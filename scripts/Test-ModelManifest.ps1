@@ -12,7 +12,7 @@ $manifestPath = Join-Path $workspace $Manifest
 $signaturePath = Join-Path $workspace $Signature
 $publicKeyPath = Join-Path $workspace $PublicKey
 
-& cargo run --quiet -p fasttalk-model-manager --bin fasttalk-model-sign -- `
+& cargo run --quiet --release -p fasttalk-model-manager --bin fasttalk-model-sign -- `
     verify $publicKeyPath $manifestPath $signaturePath
 if ($LASTEXITCODE -ne 0) { throw "Signed model manifest verification failed ($LASTEXITCODE)" }
 

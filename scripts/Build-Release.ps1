@@ -143,7 +143,7 @@ if ($Unsigned) {
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $tauriConfig -Encoding utf8
 }
 
-cargo test --workspace --locked
+cargo test --workspace --locked --release
 if ($LASTEXITCODE -ne 0) { throw "Workspace tests failed ($LASTEXITCODE)" }
 
 Push-Location $appRoot

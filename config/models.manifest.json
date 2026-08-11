@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "2026.08.11.2",
+  "release": "2026.08.11.3",
   "publicKeyId": "fasttalk-models-2026-01",
   "models": [
     {
@@ -42,6 +42,27 @@
         "id": "openmdw-1.1",
         "name": "Open Model and Data Weights License 1.1",
         "url": "https://openmdw.ai/license/1-1/"
+      },
+      "postInstall": []
+    },
+    {
+      "id": "parakeet-ctc",
+      "displayName": "Parakeet CTC 1.1B Q8 English ASR",
+      "repository": "nvidia/parakeet-ctc-1.1b",
+      "revision": "20e63a0fed6aedba145b74b826dbd41df0941730",
+      "legacyRoot": ".cache/models/parakeet-ctc",
+      "artifacts": [
+        {
+          "remotePath": "parakeet-ctc-1.1b.q8_0.gguf",
+          "path": "parakeet-ctc-1.1b.q8_0.gguf",
+          "sizeBytes": 1178100960,
+          "sha256": "6584fc0fdacf1c220401ea4c3a1d5b44454b655c141cb8672178072c203d92b8"
+        }
+      ],
+      "license": {
+        "id": "cc-by-4.0",
+        "name": "Creative Commons Attribution 4.0 International",
+        "url": "https://creativecommons.org/licenses/by/4.0/"
       },
       "postInstall": []
     },
