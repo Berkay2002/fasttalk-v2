@@ -184,6 +184,15 @@ async fn conversation_start(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<EngineSnapshot, CommandError> {
+    {
+        let mut conversation = lock(&state.conversation, "conversationUnavailable")?;
+        if conversation
+            .as_ref()
+            .is_some_and(ConversationController::is_finished)
+        {
+            conversation.take();
+        }
+    }
     if lock(&state.conversation, "conversationUnavailable")?.is_some() {
         return Ok(lock_engine(&state)?.snapshot());
     }

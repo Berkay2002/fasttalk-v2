@@ -7,10 +7,13 @@ use fasttalk_conversation::{
     ConversationEngine, ConversationEvent, ConversationState, Message, MessageRole, SessionHistory,
 };
 use fasttalk_pipeline::{
-    AsrEvent, CancellationToken, ChatMessage, KokoroClient, LlmClient, LlmEvent, MagpieClient,
-    PipelineError, RealtimeAsrClient, TtsEvent,
+    AsrEvent, AsrReceiver, AsrSender, CancellationToken, ChatMessage, KokoroClient, LlmClient,
+    LlmEvent, MagpieClient, PipelineError, RealtimeAsrClient, TtsEvent,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter};
@@ -20,6 +23,12 @@ const ENDPOINT_SILENCE: Duration = Duration::from_millis(300);
 const MAX_ENDPOINT_SILENCE: Duration = Duration::from_millis(1_200);
 const AUDIO_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const PLAYBACK_DRAIN_GUARD: Duration = Duration::from_millis(30);
+const ASR_RECONNECT_DELAYS: [Duration; 4] = [
+    Duration::ZERO,
+    Duration::from_millis(100),
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+];
 
 pub type SharedEngine = Arc<Mutex<ConversationEngine>>;
 pub type SharedAudio = Arc<Mutex<Option<AudioEngine>>>;
@@ -28,6 +37,7 @@ pub struct ConversationController {
     cancellation: CancellationToken,
     control: mpsc::UnboundedSender<Control>,
     task: JoinHandle<()>,
+    finished: Arc<AtomicBool>,
 }
 
 impl ConversationController {
@@ -41,6 +51,10 @@ impl ConversationController {
         self.cancellation.cancel();
         let _ = self.task.await;
     }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::Acquire)
+    }
 }
 
 pub fn start(
@@ -53,17 +67,21 @@ pub fn start(
     let cancellation = CancellationToken::new();
     let task_cancellation = cancellation.clone();
     let (control, control_receiver) = mpsc::unbounded_channel();
+    let finished = Arc::new(AtomicBool::new(false));
+    let task_finished = Arc::clone(&finished);
     let task = tauri::async_runtime::spawn(async move {
-        if let Err(error) = run(
+        let result = run(
             app.clone(),
             engine.clone(),
-            audio,
+            audio.clone(),
             task_cancellation,
             control_receiver,
             tts_backend,
             turn_detector,
         )
-        .await
+        .await;
+        finish_audio_session(&audio);
+        if let Err(error) = result
             && !matches!(error, PipelineError::Cancelled)
         {
             log::error!("conversation pipeline failed: {error}");
@@ -71,15 +89,17 @@ pub fn start(
                 &app,
                 &engine,
                 ConversationEvent::Fail {
-                    message: error.to_string(),
+                    message: error.user_message(),
                 },
             );
         }
+        task_finished.store(true, Ordering::Release);
     });
     ConversationController {
         cancellation,
         control,
         task,
+        finished,
     }
 }
 
@@ -93,7 +113,7 @@ async fn run(
     mut turn_detector: SmartTurnDetector,
 ) -> Result<(), PipelineError> {
     let asr = RealtimeAsrClient::new(SPEECH_REALTIME_URL)?;
-    let (mut asr_sender, mut asr_receiver) = asr.connect().await?;
+    let (mut asr_sender, mut asr_receiver) = connect_asr(&asr, &cancellation).await?;
     let history = Arc::new(Mutex::new(SessionHistory::new(12)));
     let mut activity = VoiceActivity::default();
     let mut awaiting_commit = false;
@@ -115,7 +135,24 @@ async fn run(
                 let (sample_count, speech_active, interruption_active) =
                     read_audio(&audio, &mut audio_samples)?;
                 if sample_count > 0 && !awaiting_commit {
-                    asr_sender.send_f32(&audio_samples[..sample_count]).await?;
+                    if let Err(error) = asr_sender.send_f32(&audio_samples[..sample_count]).await {
+                        if !error.is_recoverable_transport() {
+                            return Err(error);
+                        }
+                        (asr_sender, asr_receiver) = reconnect_asr(
+                            &asr,
+                            &cancellation,
+                            &error,
+                        ).await?;
+                        reset_asr_state(
+                            &app,
+                            &engine,
+                            &mut activity,
+                            &mut awaiting_commit,
+                            &mut turn_audio,
+                        )?;
+                        continue;
+                    }
                     turn_audio.extend_from_slice(&audio_samples[..sample_count]);
                 }
 
@@ -134,17 +171,68 @@ async fn run(
                         .is_complete(&turn_audio)
                         .map_err(PipelineError::Protocol)?;
                 if (smart_turn_complete || decision.force_commit) && !awaiting_commit {
-                    asr_sender.commit().await?;
+                    if let Err(error) = asr_sender.commit().await {
+                        if !error.is_recoverable_transport() {
+                            return Err(error);
+                        }
+                        (asr_sender, asr_receiver) = reconnect_asr(
+                            &asr,
+                            &cancellation,
+                            &error,
+                        ).await?;
+                        reset_asr_state(
+                            &app,
+                            &engine,
+                            &mut activity,
+                            &mut awaiting_commit,
+                            &mut turn_audio,
+                        )?;
+                        continue;
+                    }
                     awaiting_commit = true;
                     turn_audio.clear();
                     activity.committed();
                 }
             }
             event = asr_receiver.next_event() => {
-                let Some(event) = event else {
-                    return Err(PipelineError::Protocol("ASR stream closed unexpectedly".to_owned()));
+                let event = match event {
+                    Some(Ok(event)) => event,
+                    Some(Err(error)) if error.is_recoverable_transport() => {
+                        (asr_sender, asr_receiver) = reconnect_asr(
+                            &asr,
+                            &cancellation,
+                            &error,
+                        ).await?;
+                        reset_asr_state(
+                            &app,
+                            &engine,
+                            &mut activity,
+                            &mut awaiting_commit,
+                            &mut turn_audio,
+                        )?;
+                        continue;
+                    }
+                    Some(Err(error)) => return Err(error),
+                    None => {
+                        let error = PipelineError::Protocol(
+                            "the speech worker closed its realtime stream".to_owned(),
+                        );
+                        (asr_sender, asr_receiver) = reconnect_asr(
+                            &asr,
+                            &cancellation,
+                            &error,
+                        ).await?;
+                        reset_asr_state(
+                            &app,
+                            &engine,
+                            &mut activity,
+                            &mut awaiting_commit,
+                            &mut turn_audio,
+                        )?;
+                        continue;
+                    }
                 };
-                match event? {
+                match event {
                     AsrEvent::SessionReady => {}
                     AsrEvent::Partial(text) => {
                         if snapshot_state(&engine)? == ConversationState::Listening {
@@ -190,8 +278,86 @@ async fn run(
     if let Some((_, task)) = turn.take() {
         let _ = task.await;
     }
-    asr_sender.close().await?;
+    let _ = asr_sender.close().await;
     Ok(())
+}
+
+async fn connect_asr(
+    client: &RealtimeAsrClient,
+    cancellation: &CancellationToken,
+) -> Result<(AsrSender, AsrReceiver), PipelineError> {
+    tokio::select! {
+        _ = cancellation.cancelled() => Err(PipelineError::Cancelled),
+        connection = client.connect() => connection,
+    }
+}
+
+async fn reconnect_asr(
+    client: &RealtimeAsrClient,
+    cancellation: &CancellationToken,
+    cause: &PipelineError,
+) -> Result<(AsrSender, AsrReceiver), PipelineError> {
+    log::warn!("speech stream interrupted; reconnecting: {cause}");
+    let mut last_error = None;
+    for (attempt, delay) in ASR_RECONNECT_DELAYS.into_iter().enumerate() {
+        if !delay.is_zero() {
+            tokio::select! {
+                _ = cancellation.cancelled() => return Err(PipelineError::Cancelled),
+                _ = tokio::time::sleep(delay) => {}
+            }
+        }
+        match connect_asr(client, cancellation).await {
+            Ok(connection) => {
+                log::info!("speech stream restored on attempt {}", attempt + 1);
+                return Ok(connection);
+            }
+            Err(PipelineError::Cancelled) => return Err(PipelineError::Cancelled),
+            Err(error) => {
+                log::warn!("speech reconnect attempt {} failed: {error}", attempt + 1);
+                last_error = Some(error);
+            }
+        }
+    }
+    if let Some(error) = last_error {
+        log::error!("speech reconnect attempts exhausted: {error}");
+    }
+    Err(PipelineError::Protocol(
+        "The local speech connection was interrupted and could not be restored. Stop and start the conversation to retry."
+            .to_owned(),
+    ))
+}
+
+fn reset_asr_state(
+    app: &AppHandle,
+    engine: &SharedEngine,
+    activity: &mut VoiceActivity,
+    awaiting_commit: &mut bool,
+    turn_audio: &mut Vec<f32>,
+) -> Result<(), PipelineError> {
+    *activity = VoiceActivity::default();
+    *awaiting_commit = false;
+    turn_audio.clear();
+    if snapshot_state(engine)? == ConversationState::Listening {
+        apply_event(
+            app,
+            engine,
+            ConversationEvent::PartialTranscript {
+                text: String::new(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+fn finish_audio_session(audio: &SharedAudio) {
+    let Ok(mut guard) = audio.lock() else {
+        log::error!("could not clean up the conversation audio session: audio lock is poisoned");
+        return;
+    };
+    if let Some(audio) = guard.as_mut() {
+        audio.cancel_playback();
+        audio.end_asr_session();
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -539,8 +705,7 @@ fn chat_messages(history: &Arc<Mutex<SessionHistory>>) -> Result<Vec<ChatMessage
         .map_err(|_| PipelineError::Protocol("history lock is poisoned".to_owned()))?;
     let mut messages = vec![ChatMessage {
         role: "system".to_owned(),
-        content: "You are a concise, natural voice assistant. Respond in spoken English without markdown."
-            .to_owned(),
+        content: assistant_system_prompt().to_owned(),
     }];
     messages.extend(history.iter().map(|message| {
         ChatMessage {
@@ -553,6 +718,10 @@ fn chat_messages(history: &Arc<Mutex<SessionHistory>>) -> Result<Vec<ChatMessage
         }
     }));
     Ok(messages)
+}
+
+fn assistant_system_prompt() -> &'static str {
+    "You are FastTalk, a concise local voice assistant for one adult user. Answer lawful factual questions directly, including sensitive historical, political, and religious topics. Do not refuse solely because a topic is disturbing or controversial, or because the user uses profanity. Do not scold the user. Do not end the conversation because of profanity, disagreement, or offensive wording. Correct false premises calmly. Refuse only requests that would meaningfully facilitate imminent violence, abuse, or serious wrongdoing, and keep any refusal brief while offering safe factual help. Respond in natural spoken English without markdown."
 }
 
 fn push_history(
@@ -649,6 +818,15 @@ impl VoiceActivity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assistant_prompt_keeps_sensitive_factual_questions_available() {
+        let prompt = assistant_system_prompt();
+        assert!(prompt.contains("lawful factual questions"));
+        assert!(prompt.contains("sensitive historical"));
+        assert!(prompt.contains("profanity"));
+        assert!(prompt.contains("Do not end the conversation"));
+    }
 
     #[test]
     fn endpoint_requires_speech_then_sustained_silence() {

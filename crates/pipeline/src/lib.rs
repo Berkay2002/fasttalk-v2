@@ -49,6 +49,33 @@ pub enum PipelineError {
     Cancelled,
 }
 
+impl PipelineError {
+    #[must_use]
+    pub fn is_recoverable_transport(&self) -> bool {
+        use tokio_tungstenite::tungstenite::{Error as WebSocketError, error::ProtocolError};
+
+        matches!(
+            self,
+            Self::WebSocket(
+                WebSocketError::Io(_)
+                    | WebSocketError::ConnectionClosed
+                    | WebSocketError::AlreadyClosed
+                    | WebSocketError::Protocol(ProtocolError::ResetWithoutClosingHandshake)
+            )
+        )
+    }
+
+    #[must_use]
+    pub fn user_message(&self) -> String {
+        if self.is_recoverable_transport() {
+            "The local speech connection was interrupted. FastTalk will try to restore it."
+                .to_owned()
+        } else {
+            self.to_string()
+        }
+    }
+}
+
 impl std::fmt::Display for PipelineError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -87,6 +114,8 @@ impl From<serde_json::Error> for PipelineError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+    use tokio_tungstenite::tungstenite::{Error as WebSocketError, error::ProtocolError};
 
     #[test]
     fn endpoints_must_be_numeric_loopback_without_credentials() {
@@ -94,5 +123,33 @@ mod tests {
         assert!(validate_loopback_endpoint("http://0.0.0.0:18080", "http").is_err());
         assert!(validate_loopback_endpoint("http://localhost:18080", "http").is_err());
         assert!(validate_loopback_endpoint("http://user@127.0.0.1:18080", "http").is_err());
+    }
+
+    #[test]
+    fn websocket_transport_failures_can_be_retried() {
+        let reset =
+            PipelineError::WebSocket(WebSocketError::Io(io::Error::from_raw_os_error(10_054)));
+        assert!(reset.is_recoverable_transport());
+        assert!(
+            PipelineError::WebSocket(WebSocketError::Protocol(
+                ProtocolError::ResetWithoutClosingHandshake
+            ))
+            .is_recoverable_transport()
+        );
+        assert!(
+            !PipelineError::WebSocket(WebSocketError::Protocol(ProtocolError::WrongHttpMethod))
+                .is_recoverable_transport()
+        );
+        assert!(!PipelineError::Protocol("bad event".to_owned()).is_recoverable_transport());
+    }
+
+    #[test]
+    fn transport_failure_message_does_not_expose_raw_socket_details() {
+        let reset =
+            PipelineError::WebSocket(WebSocketError::Io(io::Error::from_raw_os_error(10_054)));
+        assert_eq!(
+            reset.user_message(),
+            "The local speech connection was interrupted. FastTalk will try to restore it."
+        );
     }
 }

@@ -323,6 +323,10 @@ impl NativeRuntime {
             "--port",
             &port,
             "--no-ui",
+            "--read-timeout",
+            "3600",
+            "--write-timeout",
+            "3600",
         ]);
         if self.vram_admission.backend == PreferredTtsBackend::Magpie {
             arguments.extend(os_arguments([
